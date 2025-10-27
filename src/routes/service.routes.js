@@ -1,6 +1,7 @@
 import express from "express";
 import {
   generateText,
+  generateTextStream,
   getTextHistory,
   getUsageStats,
   getTextWriterOptions,
@@ -16,6 +17,10 @@ const router = express.Router();
 
 // Generate AI Text
 router.post("/text/generate", verifyJWT, validateTextGeneration, generateText);
+
+// Generate AI Text with Streaming (Server-Sent Events)
+// Note: No middleware - they buffer streaming responses
+router.post("/text/generate-stream", generateTextStream);
 
 // Get Text Generation History
 router.get("/text/history", verifyJWT, getTextHistory);

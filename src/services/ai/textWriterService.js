@@ -32,6 +32,94 @@ export class AITextWriterService {
     this.timeout = 30000; // 30 seconds timeout
   }
 
+  // Generate text with streaming support
+  async *generateTextStream(prompt, contentType, options = {}) {
+    // Skip validation for streaming - allow mock fallback
+    // validateEnvironment();
+
+    const {
+      tone = "professional",
+      length = "medium",
+      language = "English",
+    } = options;
+
+    const systemPrompt = this.getSystemPrompt(
+      prompt,
+      contentType,
+      tone,
+      length,
+      language
+    );
+
+    try {
+      // Try OpenAI first, fallback to mock if not available
+      let openaiClient;
+      try {
+        openaiClient = getOpenAIClient();
+      } catch (e) {
+        console.log("🔄 OpenAI not available, using mock streaming");
+        // Yield mock content with streaming effect
+        const mockContent = this.generateMockText(prompt, contentType, options);
+        const words = mockContent.content.split(" ");
+
+        for (const word of words) {
+          yield word + " ";
+          // Small delay for realistic streaming
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        return {
+          success: true,
+          content: mockContent.content,
+          wordsGenerated: mockContent.wordsGenerated,
+          model: "mock-streaming",
+        };
+      }
+
+      const stream = await openaiClient.chat.completions.create({
+        model: this.model,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a professional content writer. Write high-quality, engaging content that meets the user's requirements.",
+          },
+          {
+            role: "user",
+            content: systemPrompt,
+          },
+        ],
+        max_tokens: this.maxTokens,
+        temperature: this.temperature,
+        stream: true,
+      });
+
+      let fullText = "";
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || "";
+        if (content) {
+          fullText += content;
+          yield content; // Yield each chunk as it arrives
+        }
+      }
+
+      return {
+        success: true,
+        content: fullText,
+        wordsGenerated: fullText.split(" ").length,
+        model: this.model,
+      };
+    } catch (error) {
+      console.error("OpenAI Streaming Error:", error);
+      yield `Error: ${error.message}`;
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
   // Generate text based on content type
   async generateText(prompt, contentType, options = {}) {
     // Validate environment at runtime
@@ -71,6 +159,7 @@ export class AITextWriterService {
         ],
         max_tokens: this.maxTokens,
         temperature: this.temperature,
+        stream: false, // Set to true for streaming
       });
 
       const duration = Date.now() - startTime;

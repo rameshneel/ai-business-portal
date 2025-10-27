@@ -1,0 +1,748 @@
+{
+  "info": {
+    "name": "AI Business Portal API - Phase 2",
+    "description": "Complete API testing collection for AI Business Portal with AI Text Writer and Socket.IO features",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "accessToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refreshToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"John\",\n  \"lastName\": \"Doe\",\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "register"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Login User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.accessToken) {",
+                  "        pm.collectionVariables.set('accessToken', response.data.accessToken);",
+                  "        pm.collectionVariables.set('refreshToken', response.data.refreshToken);",
+                  "        pm.collectionVariables.set('userId', response.data.user._id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john.doe@example.com\",\n  \"password\": \"Password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/tokens/refresh",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "tokens", "refresh"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/logout",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "logout"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "User Profile",
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"firstName\": \"Jane\",\n  \"lastName\": \"Smith\",\n  \"email\": \"jane.smith@example.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oldPassword\": \"Password123\",\n  \"newPassword\": \"NewPassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/me/password",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me", "password"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "AI Text Writer Service",
+      "item": [
+        {
+          "name": "Get Service Options",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/services/text/options",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "options"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate AI Text - Blog Post",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Write about the future of artificial intelligence in healthcare\",\n  \"contentType\": \"blog_post\",\n  \"tone\": \"professional\",\n  \"length\": \"medium\",\n  \"language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate AI Text - Social Media",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Promote our new AI-powered business portal\",\n  \"contentType\": \"social_media\",\n  \"tone\": \"casual\",\n  \"length\": \"short\",\n  \"language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate AI Text - Email",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Follow up email for potential client meeting\",\n  \"contentType\": \"email\",\n  \"tone\": \"professional\",\n  \"length\": \"medium\",\n  \"language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate AI Text - Product Description",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"AI-powered business automation software\",\n  \"contentType\": \"product_description\",\n  \"tone\": \"persuasive\",\n  \"length\": \"medium\",\n  \"language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Generate AI Text - Ad Copy",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Promote our AI business portal with 50% discount\",\n  \"contentType\": \"ad_copy\",\n  \"tone\": \"persuasive\",\n  \"length\": \"short\",\n  \"language\": \"English\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Text Generation History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/services/text/history?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "history"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Usage Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/services/text/usage",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "usage"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Socket.IO Real-time Features",
+      "item": [
+        {
+          "name": "Get Socket.IO Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/socket/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Connected Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/socket/connected-users",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "connected-users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Check User Online Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/socket/user/{{userId}}/status",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "user", "{{userId}}", "status"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Send Notification to User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"AI Text Generation Complete\",\n  \"message\": \"Your blog post has been generated successfully!\",\n  \"type\": \"success\",\n  \"data\": {\n    \"service\": \"ai_text_writer\",\n    \"wordsGenerated\": 250\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/socket/notify/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "notify", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Broadcast to All Users",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"System maintenance scheduled for tonight at 2 AM\",\n  \"type\": \"warning\",\n  \"data\": {\n    \"maintenanceWindow\": \"2:00 AM - 4:00 AM\",\n    \"affectedServices\": [\"AI Text Writer\", \"AI Image Generator\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/socket/admin/broadcast",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "admin", "broadcast"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Admin Broadcast to Specific Role",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"New AI Image Generator service is now available!\",\n  \"type\": \"info\",\n  \"data\": {\n    \"newService\": \"AI Image Generator\",\n    \"features\": [\"Multiple art styles\", \"High resolution\", \"Batch generation\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/socket/admin/broadcast/customer",
+              "host": ["{{baseUrl}}"],
+              "path": ["socket", "admin", "broadcast", "customer"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin Routes",
+      "item": [
+        {
+          "name": "Get All Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/users?page=1&limit=10&search=john&role=customer",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                },
+                {
+                  "key": "search",
+                  "value": "john"
+                },
+                {
+                  "key": "role",
+                  "value": "customer"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users", "{{userId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Status",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": true,\n  \"role\": \"admin\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "users", "{{userId}}"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Health Check",
+      "item": [
+        {
+          "name": "API Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["health"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Server Health Check",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "http://localhost:5000/health",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "5000",
+              "path": ["health"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Error Testing",
+      "item": [
+        {
+          "name": "Invalid Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"invalid@example.com\",\n  \"password\": \"wrongpassword\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "login"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Unauthorized Access",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Invalid Token",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer invalid_token_here"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/me",
+              "host": ["{{baseUrl}}"],
+              "path": ["auth", "me"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - AI Text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Hi\",\n  \"contentType\": \"invalid_type\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/services/text/generate",
+              "host": ["{{baseUrl}}"],
+              "path": ["services", "text", "generate"]
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

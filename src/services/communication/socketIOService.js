@@ -7,11 +7,23 @@ export class SocketIOService {
   constructor(server) {
     this.io = new Server(server, {
       cors: {
-        origin: process.env.FRONTEND_URL || "http://localhost:3000",
-        methods: ["GET", "POST"],
+        origin: [
+          process.env.FRONTEND_URL || "http://localhost:3000",
+          "http://localhost:5000",
+          "http://localhost:8000",
+          "http://127.0.0.1:5000",
+          "http://127.0.0.1:8000",
+          "http://localhost:*",
+          "*" // Allow all origins for development
+        ],
+        methods: ["GET", "POST", "OPTIONS"],
         credentials: true,
+        allowedHeaders: ["Content-Type", "Authorization"],
       },
       transports: ["websocket", "polling"],
+      allowEIO3: true,
+      pingTimeout: 60000,
+      pingInterval: 25000,
     });
 
     this.connectedUsers = new Map(); // userId -> socketId mapping
