@@ -7,7 +7,6 @@ import {
   getUsageAnalytics,
   getUserEngagementMetrics,
   getChurnAnalysis,
-  getTrialConversionFunnel,
 } from "../controllers/analytics.controller.js";
 import { verifyJWT } from "../middleware/auth.middleware.js";
 import { adminOnly } from "../middleware/role.middleware.js";
@@ -38,8 +37,5 @@ router.get("/engagement", verifyJWT, adminOnly, getUserEngagementMetrics);
 
 // Get churn analysis
 router.get("/churn", verifyJWT, adminOnly, getChurnAnalysis);
-
-// Get trial conversion funnel
-router.get("/conversion", verifyJWT, adminOnly, getTrialConversionFunnel);
 
 export default router;

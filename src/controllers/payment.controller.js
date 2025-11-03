@@ -68,10 +68,10 @@ export const createStripeSubscription = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Subscription plan not found");
   }
 
-  if (plan.type === "free" || plan.type === "trial") {
+  if (plan.type === "free") {
     throw new ApiError(
       400,
-      "Cannot create Stripe subscription for free or trial plans"
+      "Cannot create Stripe subscription for free plan"
     );
   }
 

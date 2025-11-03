@@ -1,7 +1,6 @@
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import Subscription from "../models/subscription.model.js";
-import Trial from "../models/trial.model.js";
 import ServiceUsage from "../models/serviceUsage.model.js";
 
 // Check if user has access to a specific service
@@ -15,9 +14,6 @@ export const checkServiceAccess = (serviceName) => {
       "features"
     );
 
-    // Get user's trial
-    const trial = await Trial.findOne({ userId, status: "active" });
-
     // Check if user has access
     let hasAccess = false;
     let limits = {};
@@ -28,12 +24,6 @@ export const checkServiceAccess = (serviceName) => {
       if (plan && plan.features[serviceName]?.enabled) {
         hasAccess = true;
         limits = plan.features[serviceName];
-      }
-    } else if (trial && trial.isActive()) {
-      // Check trial access
-      if (trial.limits[serviceName]) {
-        hasAccess = true;
-        limits = trial.limits[serviceName];
       }
     }
 
@@ -47,7 +37,6 @@ export const checkServiceAccess = (serviceName) => {
     // Attach limits to request
     req.serviceLimits = limits;
     req.subscription = subscription;
-    req.trial = trial;
 
     next();
   });
@@ -83,7 +72,7 @@ export const checkDailyUsageLimit = (serviceName, limitType) => {
       {
         $group: {
           _id: null,
-          totalUsage: { $sum: `$usage.${limitType}` },
+          totalUsage: { $sum: `$response.data.${limitType}` },
         },
       },
     ]);
@@ -152,7 +141,7 @@ export const checkUsageLimit = (serviceName, limitType, limitValue) => {
       {
         $group: {
           _id: null,
-          totalUsage: { $sum: `$usage.${limitType}` },
+          totalUsage: { $sum: `$response.data.${limitType}` },
         },
       },
     ]);
@@ -183,45 +172,18 @@ export const checkSubscriptionStatus = asyncHandler(async (req, res, next) => {
   // Get user's subscription
   const subscription = await Subscription.findOne({ userId });
 
-  // Get user's trial
-  const trial = await Trial.findOne({ userId, status: "active" });
-
   // Check if user has any active access
   const hasActiveSubscription = subscription && subscription.isActive();
-  const hasActiveTrial = trial && trial.isActive();
 
-  if (!hasActiveSubscription && !hasActiveTrial) {
+  if (!hasActiveSubscription) {
     throw new ApiError(
       403,
-      "No active subscription or trial found. Please start a trial or subscribe to a plan."
+      "No active subscription found. Please subscribe to a plan."
     );
   }
 
   req.subscription = subscription;
-  req.trial = trial;
-  req.hasActiveAccess = hasActiveSubscription || hasActiveTrial;
-
-  next();
-});
-
-// Check if user is on trial and near expiration
-export const checkTrialExpiration = asyncHandler(async (req, res, next) => {
-  const trial = req.trial;
-
-  if (trial && trial.isActive()) {
-    const daysRemaining = Math.ceil(
-      (trial.endTime - new Date()) / (1000 * 60 * 60 * 24)
-    );
-
-    if (daysRemaining <= 3) {
-      // Add warning to response headers
-      res.setHeader(
-        "X-Trial-Warning",
-        `Trial expires in ${daysRemaining} days`
-      );
-      res.setHeader("X-Trial-Expiry", trial.endTime.toISOString());
-    }
-  }
+  req.hasActiveAccess = hasActiveSubscription;
 
   next();
 });

@@ -14,7 +14,7 @@ export class SocketIOService {
           "http://127.0.0.1:5000",
           "http://127.0.0.1:8000",
           "http://localhost:*",
-          "*" // Allow all origins for development
+          "*", // Allow all origins for development
         ],
         methods: ["GET", "POST", "OPTIONS"],
         credentials: true,
@@ -149,6 +149,85 @@ export class SocketIOService {
 
   // Handle AI service events
   handleAIServiceEvents(socket) {
+    // AI Text Generation Request via Socket.IO
+    socket.on("generate_text", async (data) => {
+      console.log(`📝 AI Text generation requested by user ${socket.userId}`);
+
+      const { prompt, contentType, tone, length, language } = data;
+
+      if (!prompt || !contentType) {
+        socket.emit("text_generation_error", {
+          error: "Prompt and content type are required",
+          timestamp: new Date(),
+        });
+        return;
+      }
+
+      // Emit generation started event
+      socket.emit("text_generation_started", {
+        contentType: contentType,
+        prompt: prompt,
+        timestamp: new Date(),
+      });
+
+      // Import and call the service
+      try {
+        const { aiTextWriterService } = await import(
+          "../../services/ai/services/textWriter/textWriterService.js"
+        );
+
+        // Start streaming
+        const stream = aiTextWriterService.generateTextStream(
+          prompt,
+          contentType,
+          {
+            tone,
+            length,
+            language,
+          }
+        );
+
+        let fullText = "";
+        let finalResult = null;
+
+        // Stream chunks in real-time
+        for await (const chunk of stream) {
+          if (chunk && typeof chunk === "object" && chunk.content) {
+            finalResult = chunk;
+            fullText = chunk.content;
+          } else if (typeof chunk === "string") {
+            fullText += chunk;
+            // Emit each chunk as it arrives
+            socket.emit("text_generation_chunk", {
+              chunk: chunk,
+              partial: fullText,
+              timestamp: new Date(),
+            });
+          }
+        }
+
+        // Emit completion event
+        socket.emit("text_generation_complete", {
+          fullText: fullText,
+          wordsGenerated: fullText.split(" ").length,
+          contentType: contentType,
+          model: finalResult?.model || "gpt-3.5-turbo",
+          success: finalResult?.success || true,
+          timestamp: new Date(),
+        });
+
+        console.log(
+          `✅ AI Text generation completed for user ${socket.userId}`
+        );
+      } catch (error) {
+        console.error("Text generation error:", error);
+        socket.emit("text_generation_error", {
+          error: error.message,
+          timestamp: new Date(),
+        });
+      }
+    });
+
     // AI Text Generation Progress
     socket.on("ai_text_generation_start", (data) => {
       console.log(`📝 AI Text generation started for user ${socket.userId}`);
@@ -186,15 +265,6 @@ export class SocketIOService {
     socket.on("subscription_status_request", () => {
       console.log(`💳 Subscription status requested by ${socket.userId}`);
       socket.emit("subscription_status_requested", {
-        userId: socket.userId,
-        timestamp: new Date(),
-      });
-    });
-
-    // Trial expiration check
-    socket.on("trial_expiration_check", () => {
-      console.log(`⏰ Trial expiration check requested by ${socket.userId}`);
-      socket.emit("trial_expiration_check_requested", {
         userId: socket.userId,
         timestamp: new Date(),
       });

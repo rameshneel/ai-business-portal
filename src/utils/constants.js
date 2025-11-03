@@ -25,12 +25,6 @@ export const PAYMENT_STATUS = {
   REFUNDED: "refunded",
 };
 
-export const TRIAL_STATUS = {
-  ACTIVE: "active",
-  EXPIRED: "expired",
-  CONVERTED: "converted",
-  CANCELLED: "cancelled",
-};
 
 export const SUBSCRIPTION_TYPES = {
   FREE: "free",

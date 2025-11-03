@@ -18,9 +18,7 @@ const router = express.Router();
 // Generate AI Text
 router.post("/text/generate", verifyJWT, validateTextGeneration, generateText);
 
-// Generate AI Text with Streaming (Server-Sent Events)
-// Note: No middleware - they buffer streaming responses
-router.post("/text/generate-stream", generateTextStream);
+router.post("/text/generate-stream", verifyJWT, generateTextStream);
 
 // Get Text Generation History
 router.get("/text/history", verifyJWT, getTextHistory);

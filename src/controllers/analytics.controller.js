@@ -134,22 +134,3 @@ export const getChurnAnalysis = asyncHandler(async (req, res) => {
     .status(200)
     .json(new ApiResponse(200, churn, "Churn analysis retrieved successfully"));
 });
-
-// Get trial conversion funnel
-export const getTrialConversionFunnel = asyncHandler(async (req, res) => {
-  if (req.user.role !== "admin") {
-    throw new ApiError(403, "Admin access required");
-  }
-
-  const funnel = await subscriptionAnalyticsService.getTrialConversionFunnel();
-
-  return res
-    .status(200)
-    .json(
-      new ApiResponse(
-        200,
-        funnel,
-        "Trial conversion funnel retrieved successfully"
-      )
-    );
-});

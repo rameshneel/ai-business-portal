@@ -7,7 +7,7 @@ import { createServer } from "http";
 import app from "./app.js";
 import connectDB from "./config/database.js";
 import { initializeSocketIO } from "./services/communication/socketIOService.js";
-import { initializeAITextWriterService } from "./services/ai/serviceInitializer.js";
+import { initializeAITextWriterService } from "./services/ai/utils/serviceInitializer.js";
 import { initializeSubscriptionPlans } from "./services/subscription/planInitializer.js";
 
 const PORT = process.env.PORT || 5000;

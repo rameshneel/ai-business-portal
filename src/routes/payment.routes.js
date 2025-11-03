@@ -17,7 +17,7 @@ const router = express.Router();
 
 // Create Stripe customer
 router.post("/customer/create", verifyJWT, createStripeCustomer);
-
+router.post("/create-intent", verifyJWT, createStripeCustomer);
 // Create Stripe subscription
 router.post(
   "/subscription/create",

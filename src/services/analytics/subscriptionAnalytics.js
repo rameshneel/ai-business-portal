@@ -1,5 +1,4 @@
 import Subscription from "../../models/subscription.model.js";
-import Trial from "../../models/trial.model.js";
 import ServiceUsage from "../../models/serviceUsage.model.js";
 import User from "../../models/user.model.js";
 
@@ -18,11 +17,6 @@ export class SubscriptionAnalyticsService {
       status: "expired",
     });
 
-    const totalTrials = await Trial.countDocuments();
-    const activeTrials = await Trial.countDocuments({ status: "active" });
-    const convertedTrials = await Trial.countDocuments({ status: "converted" });
-    const expiredTrials = await Trial.countDocuments({ status: "expired" });
-
     return {
       subscriptions: {
         total: totalSubscriptions,
@@ -33,14 +27,6 @@ export class SubscriptionAnalyticsService {
           totalSubscriptions > 0
             ? (activeSubscriptions / totalSubscriptions) * 100
             : 0,
-      },
-      trials: {
-        total: totalTrials,
-        active: activeTrials,
-        converted: convertedTrials,
-        expired: expiredTrials,
-        conversionRate:
-          totalTrials > 0 ? (convertedTrials / totalTrials) * 100 : 0,
       },
     };
   }
@@ -124,8 +110,8 @@ export class SubscriptionAnalyticsService {
           successfulRequests: {
             $sum: { $cond: ["$response.success", 1, 0] },
           },
-          totalWords: { $sum: "$usage.wordsGenerated" },
-          totalImages: { $sum: "$usage.imagesGenerated" },
+          totalWords: { $sum: "$response.data.wordsGenerated" },
+          totalImages: { $sum: "$response.data.imagesGenerated" },
           averageResponseTime: { $avg: "$response.responseTime" },
         },
       },
@@ -149,13 +135,10 @@ export class SubscriptionAnalyticsService {
     const subscriptionUsers = await Subscription.countDocuments({
       status: "active",
     });
-    const trialUsers = await Trial.countDocuments({ status: "active" });
-
     return {
       totalUsers,
       activeUsers,
       subscriptionUsers,
-      trialUsers,
       engagementRate: totalUsers > 0 ? (activeUsers / totalUsers) * 100 : 0,
       subscriptionRate:
         totalUsers > 0 ? (subscriptionUsers / totalUsers) * 100 : 0,
@@ -186,24 +169,6 @@ export class SubscriptionAnalyticsService {
     };
   }
 
-  // Get trial conversion funnel
-  async getTrialConversionFunnel() {
-    const totalTrials = await Trial.countDocuments();
-    const convertedTrials = await Trial.countDocuments({ status: "converted" });
-    const expiredTrials = await Trial.countDocuments({ status: "expired" });
-    const activeTrials = await Trial.countDocuments({ status: "active" });
-
-    return {
-      totalTrials,
-      activeTrials,
-      convertedTrials,
-      expiredTrials,
-      conversionRate:
-        totalTrials > 0 ? (convertedTrials / totalTrials) * 100 : 0,
-      expirationRate: totalTrials > 0 ? (expiredTrials / totalTrials) * 100 : 0,
-    };
-  }
-
   // Get comprehensive dashboard data
   async getDashboardData() {
     const [
@@ -213,7 +178,6 @@ export class SubscriptionAnalyticsService {
       usageAnalytics,
       userEngagement,
       churnAnalysis,
-      conversionFunnel,
     ] = await Promise.all([
       this.getSubscriptionMetrics(),
       this.getPlanDistribution(),
@@ -221,7 +185,6 @@ export class SubscriptionAnalyticsService {
       this.getUsageAnalytics(),
       this.getUserEngagementMetrics(),
       this.getChurnAnalysis(),
-      this.getTrialConversionFunnel(),
     ]);
 
     return {
@@ -231,7 +194,6 @@ export class SubscriptionAnalyticsService {
       usageAnalytics,
       userEngagement,
       churnAnalysis,
-      conversionFunnel,
       generatedAt: new Date(),
     };
   }

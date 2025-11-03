@@ -1,4 +1,4 @@
-import Service from "../../models/service.model.js";
+import Service from "../../../models/service.model.js";
 
 // Initialize AI Text Writer Service in Database
 export const initializeAITextWriterService = async () => {
@@ -42,8 +42,8 @@ export const initializeAITextWriterService = async () => {
 
       // Pricing
       pricing: {
-        freeTrial: {
-          wordsPerDay: 1000,
+        free: {
+          wordsPerDay: 500,
           requestsPerDay: 10,
         },
         paid: {

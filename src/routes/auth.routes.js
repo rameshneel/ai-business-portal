@@ -40,6 +40,8 @@ router.post("/login", validateLogin, loginUser);
 
 // Refresh Access Token
 router.post("/tokens/refresh", validateRefreshToken, refreshAccessToken);
+// Alias for convenience
+router.post("/refresh", validateRefreshToken, refreshAccessToken);
 
 // ========================================
 // USER SESSION ROUTES (Protected)
@@ -53,16 +55,26 @@ router.post("/logout", verifyJWT, logoutUser);
 // ========================================
 
 // Get Current User Profile
-router.get("/me", verifyJWT, getCurrentUser);
+router.get("/profile", verifyJWT, getCurrentUser);
 
 // Update Current User Profile
-router.put("/me", verifyJWT, validateProfileUpdate, updateUserProfile);
+router.put("/profile", verifyJWT, validateProfileUpdate, updateUserProfile);
 
 // Change Current User Password
-router.put("/me/password", verifyJWT, validatePasswordChange, changePassword);
+router.put(
+  "/profile/password",
+  verifyJWT,
+  validatePasswordChange,
+  changePassword
+);
 
 // Delete Current User Account
-router.delete("/me", verifyJWT, validateAccountDeletion, deleteUserAccount);
+router.delete(
+  "/profile",
+  verifyJWT,
+  validateAccountDeletion,
+  deleteUserAccount
+);
 
 // ========================================
 // USER MANAGEMENT ROUTES (Admin Only)

@@ -16,7 +16,29 @@ import { socketIOMiddleware } from "./middleware/socketIO.middleware.js";
 const app = express();
 
 // Security middleware
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: [
+          "'self'",
+          "'unsafe-inline'",
+          "'unsafe-eval'",
+          "https://cdn.socket.io", // Allow Socket.IO CDN
+        ],
+        scriptSrcAttr: ["'unsafe-inline'"], // Allow inline event handlers (onclick, etc.)
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "https:"],
+        connectSrc: [
+          "'self'",
+          "http://localhost:5000", // Allow Socket.IO connection
+          "https://cdn.socket.io",
+        ],
+      },
+    },
+  })
+);
 app.use(compression());
 
 // Cookie parser middleware (MUST be before CORS)
@@ -39,20 +61,25 @@ app.use(
   })
 );
 
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-  max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
-  message: "Too many requests from this IP, please try again later.",
-});
-app.use(limiter);
+// Rate limiting - Only enabled in production
+if (process.env.NODE_ENV === "production") {
+  const limiter = rateLimit({
+    windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
+    max: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100, // limit each IP to 100 requests per windowMs
+    message: "Too many requests from this IP, please try again later.",
+  });
+  app.use(limiter);
+  console.log("✅ Rate limiting enabled (Production mode)");
+} else {
+  console.log("⚠️ Rate limiting disabled (Development mode)");
+}
 
 // Logging
-if (process.env.NODE_ENV === "development") {
-  app.use(morgan("dev"));
-} else {
-  app.use(morgan("combined"));
-}
+// if (process.env.NODE_ENV === "development") {
+//   app.use(morgan("dev"));
+// } else {
+//   app.use(morgan("combined"));
+// }
 
 // Body parsing middleware
 app.use(express.json({ limit: "10mb" }));
@@ -60,6 +87,7 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // Static files
 app.use("/uploads", express.static("uploads"));
+app.use(express.static("public"));
 
 // Health check endpoint
 app.get("/health", (req, res) => {

@@ -2,14 +2,12 @@ import express from "express";
 import {
   getSubscriptionPlans,
   getCurrentSubscription,
-  startTrial,
   upgradeSubscription,
   cancelSubscription,
   getSubscriptionUsage,
   getAllSubscriptions,
 } from "../controllers/subscription.controller.js";
 import {
-  checkTrialExpiration,
   getSubscriptionStatus,
   sendUpgradePrompt,
 } from "../controllers/subscriptionNotification.controller.js";
@@ -34,9 +32,6 @@ router.get("/plans", getSubscriptionPlans);
 // Get user's current subscription
 router.get("/current", verifyJWT, getCurrentSubscription);
 
-// Start a trial
-router.post("/trial/start", verifyJWT, startTrial);
-
 // Upgrade to paid subscription
 router.post(
   "/upgrade",
@@ -54,9 +49,6 @@ router.get("/usage", verifyJWT, validateUsageQuery, getSubscriptionUsage);
 // ========================================
 // REAL-TIME NOTIFICATION ROUTES
 // ========================================
-
-// Check trial expiration with real-time notifications
-router.get("/trial/expiration", verifyJWT, checkTrialExpiration);
 
 // Get subscription status with real-time updates
 router.get("/status", verifyJWT, getSubscriptionStatus);

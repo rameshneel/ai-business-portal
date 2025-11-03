@@ -14,11 +14,6 @@ export const validateSubscriptionUpgrade = [
     .withMessage("Billing cycle must be either 'monthly' or 'yearly'"),
 ];
 
-export const validateTrialStart = [
-  // No additional validation needed for trial start
-  // Business logic handles one trial per user
-];
-
 export const validateSubscriptionCancel = [
   // No additional validation needed for cancellation
   // Business logic handles active subscription check
@@ -40,7 +35,7 @@ export const validateUpgradePrompt = [
   body("reason")
     .notEmpty()
     .withMessage("Reason is required")
-    .isIn(["limit_reached", "trial_expiring", "feature_unavailable", "general"])
+    .isIn(["limit_reached", "feature_unavailable", "general"])
     .withMessage("Invalid reason type"),
 
   body("service")
@@ -61,7 +56,7 @@ export const validateSubscriptionQuery = [
 
   query("plan")
     .optional()
-    .isIn(["free", "trial", "basic", "pro", "enterprise"])
+    .isIn(["free", "basic", "pro", "enterprise"])
     .withMessage("Invalid plan type"),
 
   query("page")

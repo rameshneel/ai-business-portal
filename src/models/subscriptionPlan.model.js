@@ -45,7 +45,7 @@ const subscriptionPlanSchema = new mongoose.Schema(
     type: {
       type: String,
       required: true,
-      enum: ["free", "trial", "basic", "pro", "enterprise"],
+      enum: ["free", "basic", "pro", "enterprise"],
       default: "basic",
     },
 
@@ -78,21 +78,6 @@ const subscriptionPlanSchema = new mongoose.Schema(
       analytics: { type: Boolean, default: false },
     },
 
-    // Trial Settings
-    trial: {
-      enabled: { type: Boolean, default: false },
-      durationDays: { type: Number, default: 0 },
-      features: {
-        aiTextWriter: {
-          wordsPerDay: { type: Number, default: 0 },
-          requestsPerDay: { type: Number, default: 0 },
-        },
-        aiImageGenerator: {
-          imagesPerDay: { type: Number, default: 0 },
-          requestsPerDay: { type: Number, default: 0 },
-        },
-      },
-    },
 
     // Stripe Integration
     stripe: {
@@ -144,10 +129,6 @@ subscriptionPlanSchema.methods.isFree = function () {
   return this.type === "free" || this.price.monthly === 0;
 };
 
-subscriptionPlanSchema.methods.hasTrial = function () {
-  return this.trial.enabled && this.trial.durationDays > 0;
-};
-
 subscriptionPlanSchema.methods.getFeatureLimit = function (service, limitType) {
   if (!this.features[service]) return 0;
   return this.features[service][limitType] || 0;
@@ -164,10 +145,6 @@ subscriptionPlanSchema.statics.getActivePlans = function () {
 
 subscriptionPlanSchema.statics.getFreePlan = function () {
   return this.findOne({ type: "free", status: "active" });
-};
-
-subscriptionPlanSchema.statics.getTrialPlan = function () {
-  return this.findOne({ type: "trial", status: "active" });
 };
 
 // Pre-save middleware

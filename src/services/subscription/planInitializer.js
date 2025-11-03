@@ -18,7 +18,7 @@ export const initializeSubscriptionPlans = async () => {
         name: "free",
         displayName: "Free Plan",
         description:
-          "Perfect for trying out our AI services with basic features",
+          "Perfect for trying out our AI services with basic features - Always free!",
         price: {
           monthly: 0,
           yearly: 0,
@@ -27,69 +27,23 @@ export const initializeSubscriptionPlans = async () => {
         type: "free",
         features: {
           aiTextWriter: {
-            wordsPerDay: 0,
-            requestsPerDay: 0,
-            enabled: false,
-          },
-          aiImageGenerator: {
-            imagesPerDay: 0,
-            requestsPerDay: 0,
-            enabled: false,
-          },
-          aiSearch: {
-            searchesPerDay: 0,
-            requestsPerDay: 0,
-            enabled: false,
-          },
-          aiChatbot: {
-            chatbotsPerAccount: 0,
-            messagesPerDay: 0,
-            enabled: false,
-          },
-          prioritySupport: false,
-          apiAccess: false,
-          customBranding: false,
-          analytics: false,
-        },
-        trial: {
-          enabled: false,
-          durationDays: 0,
-          features: {},
-        },
-        status: "active",
-        displayOrder: 1,
-        isPopular: false,
-      },
-      {
-        name: "trial",
-        displayName: "7-Day Trial",
-        description:
-          "Experience all our AI services with generous limits for 7 days",
-        price: {
-          monthly: 0,
-          yearly: 0,
-          currency: "USD",
-        },
-        type: "trial",
-        features: {
-          aiTextWriter: {
-            wordsPerDay: 1000,
+            wordsPerDay: 500,
             requestsPerDay: 10,
             enabled: true,
           },
           aiImageGenerator: {
-            imagesPerDay: 5,
-            requestsPerDay: 5,
+            imagesPerDay: 3,
+            requestsPerDay: 3,
             enabled: true,
           },
           aiSearch: {
-            searchesPerDay: 20,
-            requestsPerDay: 20,
+            searchesPerDay: 10,
+            requestsPerDay: 10,
             enabled: true,
           },
           aiChatbot: {
             chatbotsPerAccount: 1,
-            messagesPerDay: 50,
+            messagesPerDay: 20,
             enabled: true,
           },
           prioritySupport: false,
@@ -97,22 +51,8 @@ export const initializeSubscriptionPlans = async () => {
           customBranding: false,
           analytics: false,
         },
-        trial: {
-          enabled: true,
-          durationDays: 7,
-          features: {
-            aiTextWriter: {
-              wordsPerDay: 1000,
-              requestsPerDay: 10,
-            },
-            aiImageGenerator: {
-              imagesPerDay: 5,
-              requestsPerDay: 5,
-            },
-          },
-        },
         status: "active",
-        displayOrder: 2,
+        displayOrder: 1,
         isPopular: false,
       },
       {
@@ -128,37 +68,32 @@ export const initializeSubscriptionPlans = async () => {
         type: "basic",
         features: {
           aiTextWriter: {
-            wordsPerDay: 5000,
-            requestsPerDay: 50,
-            enabled: true,
-          },
-          aiImageGenerator: {
-            imagesPerDay: 20,
-            requestsPerDay: 20,
-            enabled: true,
-          },
-          aiSearch: {
-            searchesPerDay: 100,
+            wordsPerDay: 10000,
             requestsPerDay: 100,
             enabled: true,
           },
-          aiChatbot: {
-            chatbotsPerAccount: 3,
-            messagesPerDay: 200,
+          aiImageGenerator: {
+            imagesPerDay: 50,
+            requestsPerDay: 50,
             enabled: true,
           },
-          prioritySupport: false,
-          apiAccess: false,
+          aiSearch: {
+            searchesPerDay: 200,
+            requestsPerDay: 200,
+            enabled: true,
+          },
+          aiChatbot: {
+            chatbotsPerAccount: 5,
+            messagesPerDay: 1000,
+            enabled: true,
+          },
+          prioritySupport: true,
+          apiAccess: true,
           customBranding: false,
           analytics: true,
         },
-        trial: {
-          enabled: false,
-          durationDays: 0,
-          features: {},
-        },
         status: "active",
-        displayOrder: 3,
+        displayOrder: 2,
         isPopular: true,
       },
       {
@@ -173,13 +108,13 @@ export const initializeSubscriptionPlans = async () => {
         type: "pro",
         features: {
           aiTextWriter: {
-            wordsPerDay: 20000,
-            requestsPerDay: 200,
+            wordsPerDay: 50000,
+            requestsPerDay: 500,
             enabled: true,
           },
           aiImageGenerator: {
-            imagesPerDay: 100,
-            requestsPerDay: 100,
+            imagesPerDay: 150,
+            requestsPerDay: 150,
             enabled: true,
           },
           aiSearch: {
@@ -189,21 +124,16 @@ export const initializeSubscriptionPlans = async () => {
           },
           aiChatbot: {
             chatbotsPerAccount: 10,
-            messagesPerDay: 1000,
+            messagesPerDay: 3000,
             enabled: true,
           },
           prioritySupport: true,
           apiAccess: true,
-          customBranding: false,
+          customBranding: true,
           analytics: true,
         },
-        trial: {
-          enabled: false,
-          durationDays: 0,
-          features: {},
-        },
         status: "active",
-        displayOrder: 4,
+        displayOrder: 3,
         isPopular: false,
       },
       {
@@ -219,23 +149,23 @@ export const initializeSubscriptionPlans = async () => {
         type: "enterprise",
         features: {
           aiTextWriter: {
-            wordsPerDay: 100000,
-            requestsPerDay: 1000,
+            wordsPerDay: 999999999,
+            requestsPerDay: 999999999,
             enabled: true,
           },
           aiImageGenerator: {
-            imagesPerDay: 500,
-            requestsPerDay: 500,
+            imagesPerDay: 999999999,
+            requestsPerDay: 999999999,
             enabled: true,
           },
           aiSearch: {
-            searchesPerDay: 2000,
-            requestsPerDay: 2000,
+            searchesPerDay: 999999999,
+            requestsPerDay: 999999999,
             enabled: true,
           },
           aiChatbot: {
-            chatbotsPerAccount: 50,
-            messagesPerDay: 5000,
+            chatbotsPerAccount: 999999999,
+            messagesPerDay: 999999999,
             enabled: true,
           },
           prioritySupport: true,
@@ -243,13 +173,8 @@ export const initializeSubscriptionPlans = async () => {
           customBranding: true,
           analytics: true,
         },
-        trial: {
-          enabled: false,
-          durationDays: 0,
-          features: {},
-        },
         status: "active",
-        displayOrder: 5,
+        displayOrder: 4,
         isPopular: false,
       },
     ];

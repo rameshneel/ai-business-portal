@@ -1,7 +1,15 @@
 import OpenAI from "openai";
+import {
+  getOpenRouterClient,
+  DEFAULT_OPENROUTER_MODEL,
+} from "../../providers/openrouter.js";
 
-// Lazy-loaded OpenAI client
+// Use OpenRouter for development (better pricing & availability)
+const USE_OPENROUTER = process.env.USE_OPENROUTER !== "false"; // Default true
+
+// Lazy-loaded clients
 let openai = null;
+let openrouter = null;
 
 // Initialize OpenAI client when needed
 const getOpenAIClient = () => {
@@ -16,11 +24,25 @@ const getOpenAIClient = () => {
   return openai;
 };
 
-// Validate environment variables at runtime
-const validateEnvironment = () => {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY environment variable is required");
+// Get API client (OpenRouter or OpenAI)
+const getAIClient = () => {
+  if (USE_OPENROUTER) {
+    try {
+      return getOpenRouterClient();
+    } catch (e) {
+      console.log("⚠️ OpenRouter not available, falling back to OpenAI");
+      return getOpenAIClient();
+    }
   }
+  return getOpenAIClient();
+};
+
+// Get model name based on provider
+const getModel = () => {
+  if (USE_OPENROUTER) {
+    return process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
+  }
+  return "gpt-3.5-turbo";
 };
 
 // AI Text Writer Service
@@ -55,29 +77,40 @@ export class AITextWriterService {
       // Try OpenAI first, fallback to mock if not available
       let openaiClient;
       try {
-        openaiClient = getOpenAIClient();
+        openaiClient = getAIClient();
+        console.log(`🚀 Using ${USE_OPENROUTER ? "OpenRouter" : "OpenAI"}`);
       } catch (e) {
-        console.log("🔄 OpenAI not available, using mock streaming");
+        console.log("🔄 AI service not available, using mock streaming");
         // Yield mock content with streaming effect
         const mockContent = this.generateMockText(prompt, contentType, options);
         const words = mockContent.content.split(" ");
+        let mockFullText = "";
 
         for (const word of words) {
-          yield word + " ";
+          const wordWithSpace = word + " ";
+          mockFullText += wordWithSpace;
+          yield wordWithSpace; // ← Yield only strings
           // Small delay for realistic streaming
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
 
+        // Calculate word count properly
+        const trimmedMockText = mockFullText.trim();
+        const mockWordsGenerated = trimmedMockText
+          .split(/\s+/)
+          .filter((w) => w.length > 0).length;
+
+        // ← Return final result object (not yield)
         return {
           success: true,
-          content: mockContent.content,
-          wordsGenerated: mockContent.wordsGenerated,
+          content: trimmedMockText,
+          wordsGenerated: mockWordsGenerated,
           model: "mock-streaming",
         };
       }
 
       const stream = await openaiClient.chat.completions.create({
-        model: this.model,
+        model: getModel(),
         messages: [
           {
             role: "system",
@@ -100,22 +133,73 @@ export class AITextWriterService {
         const content = chunk.choices[0]?.delta?.content || "";
         if (content) {
           fullText += content;
-          yield content; // Yield each chunk as it arrives
+          yield content; // ← Yield only string chunks (best practice)
         }
       }
 
+      // Calculate word count properly (trim and filter empty strings)
+      const trimmedText = fullText.trim();
+      const wordsGenerated = trimmedText
+        .split(/\s+/)
+        .filter((w) => w.length > 0).length;
+
+      // ← Return final result object (not yield - best practice)
       return {
         success: true,
-        content: fullText,
-        wordsGenerated: fullText.split(" ").length,
-        model: this.model,
+        content: trimmedText,
+        wordsGenerated: wordsGenerated,
+        model: getModel(),
       };
     } catch (error) {
       console.error("OpenAI Streaming Error:", error);
-      yield `Error: ${error.message}`;
+
+      // If quota exceeded or rate limit, fall back to mock
+      if (
+        error.code === "insufficient_quota" ||
+        error.status === 429 ||
+        error.code === "rate_limit_exceeded"
+      ) {
+        console.log(
+          "🔄 OpenAI quota/rate limit exceeded, falling back to mock streaming"
+        );
+
+        // Generate mock content with streaming effect
+        const mockContent = this.generateMockText(prompt, contentType, options);
+        const words = mockContent.content.split(" ");
+        let mockFullText = "";
+
+        for (const word of words) {
+          const wordWithSpace = word + " ";
+          mockFullText += wordWithSpace;
+          yield wordWithSpace; // ← Yield only strings
+          // Small delay for realistic streaming
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+
+        // Calculate word count properly
+        const trimmedMockText = mockFullText.trim();
+        const mockWordsGenerated = trimmedMockText
+          .split(/\s+/)
+          .filter((w) => w.length > 0).length;
+
+        // ← Return final result object (not yield)
+        return {
+          success: true,
+          content: trimmedMockText,
+          wordsGenerated: mockWordsGenerated,
+          model: "mock-streaming",
+        };
+      }
+
+      // For other errors, yield error message as string, then return error object
+      // This allows frontend to display error during streaming
+      yield `\n\nError: ${error.message}`;
+
+      // ← Return error object (not yield - best practice)
       return {
         success: false,
         error: error.message,
+        content: `Error: ${error.message}`,
       };
     }
   }

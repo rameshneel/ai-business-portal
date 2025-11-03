@@ -69,20 +69,6 @@ const userSchema = new mongoose.Schema(
       select: false, // Don't include in queries by default
     },
 
-    // Trial Information
-    trialStart: {
-      type: Date,
-      default: null,
-    },
-    trialEnd: {
-      type: Date,
-      default: null,
-    },
-    trialUsed: {
-      type: Boolean,
-      default: false,
-    },
-
     // Subscription Information
     subscription: {
       type: {
@@ -146,11 +132,6 @@ userSchema.pre("save", async function (next) {
 // Instance methods
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
-};
-
-userSchema.methods.isTrialActive = function () {
-  if (!this.trialStart || !this.trialEnd) return false;
-  return new Date() < this.trialEnd;
 };
 
 userSchema.methods.getFullName = function () {

@@ -20,7 +20,7 @@ const subscriptionSchema = new mongoose.Schema(
     // Legacy plan field (for backward compatibility)
     plan: {
       type: String,
-      enum: ["free", "trial", "starter", "premium", "platinum", "enterprise"],
+      enum: ["free", "basic", "pro", "enterprise"],
       default: "free",
     },
 

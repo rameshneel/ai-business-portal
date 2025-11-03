@@ -3,8 +3,9 @@ import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import Subscription from "../models/subscription.model.js";
 import SubscriptionPlan from "../models/subscriptionPlan.model.js";
-import Trial from "../models/trial.model.js";
 import User from "../models/user.model.js";
+import ServiceUsage from "../models/serviceUsage.model.js";
+import Service from "../models/service.model.js";
 import {
   createDefaultUsage,
   createSubscriptionData,
@@ -31,7 +32,6 @@ export const getSubscriptionPlans = asyncHandler(async (req, res) => {
           price: plan.price,
           type: plan.type,
           features: plan.features,
-          trial: plan.trial,
           isPopular: plan.isPopular,
           displayOrder: plan.displayOrder,
         })),
@@ -46,21 +46,61 @@ export const getSubscriptionPlans = asyncHandler(async (req, res) => {
 export const getCurrentSubscription = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
-  const subscription = await Subscription.findOne({ userId })
+  let subscription = await Subscription.findOne({ userId })
     .populate("planId", "name displayName type features price")
     .sort({ createdAt: -1 });
 
+  // Auto-create free subscription if user doesn't have one
   if (!subscription) {
-    return res.status(200).json(
-      new ApiResponse(
-        200,
-        {
-          subscription: null,
-          hasActiveSubscription: false,
-          message: "No active subscription found",
-        },
-        "User subscription status retrieved"
-      )
+    console.log(
+      "🆕 No subscription found in getCurrentSubscription, creating free plan for user:",
+      userId
+    );
+
+    // Get free plan
+    const freePlan = await SubscriptionPlan.findOne({
+      type: "free",
+      status: "active",
+    });
+
+    if (!freePlan) {
+      return res.status(200).json(
+        new ApiResponse(
+          200,
+          {
+            subscription: null,
+            hasActiveSubscription: false,
+            message: "No active subscription found. Free plan not available.",
+          },
+          "User subscription status retrieved"
+        )
+      );
+    }
+
+    // Create free subscription
+    const subscriptionData = createSubscriptionData(
+      userId,
+      freePlan._id,
+      freePlan,
+      "monthly",
+      0,
+      freePlan.price.currency || "USD",
+      freePlan.features,
+      freePlan.features
+    );
+
+    subscription = new Subscription(subscriptionData);
+    await subscription.save();
+
+    // Populate planId
+    subscription = await Subscription.findById(subscription._id).populate(
+      "planId",
+      "name displayName type features price"
+    );
+
+    console.log(
+      "✅ Free subscription created in getCurrentSubscription for user:",
+      userId
     );
   }
 
@@ -93,107 +133,6 @@ export const getCurrentSubscription = asyncHandler(async (req, res) => {
   );
 });
 
-// Start a trial
-export const startTrial = asyncHandler(async (req, res) => {
-  const userId = req.user._id;
-
-  // Check if user already has an active trial
-  const existingTrial = await Trial.findOne({
-    userId,
-    status: { $in: ["active", "expired"] },
-  });
-
-  if (existingTrial) {
-    throw new ApiError(
-      400,
-      "User already has a trial. One trial per user allowed."
-    );
-  }
-
-  // Get trial plan
-  const trialPlan = await SubscriptionPlan.getTrialPlan();
-  if (!trialPlan) {
-    throw new ApiError(404, "Trial plan not found");
-  }
-
-  // Create trial
-  const trial = new Trial({
-    userId: userId,
-    planId: trialPlan._id,
-    startTime: new Date(),
-    status: "active",
-    limits: trialPlan.trial.features,
-  });
-
-  await trial.save();
-
-  // Update user's subscription to trial
-  const subscriptionData = createSubscriptionData(
-    userId,
-    trialPlan._id,
-    { type: "trial" },
-    "monthly",
-    0,
-    "USD",
-    trialPlan.trial.features,
-    trialPlan.features
-  );
-
-  // Override trial-specific dates
-  subscriptionData.currentPeriodStart = trial.startTime;
-  subscriptionData.currentPeriodEnd = trial.endTime;
-
-  const subscription = new Subscription(subscriptionData);
-
-  await subscription.save();
-
-  // Emit trial start event
-  if (req.socketIO) {
-    req.socketIO.emitToUser(userId, "trial_started", {
-      trial: {
-        id: trial._id,
-        startTime: trial.startTime,
-        endTime: trial.endTime,
-        remainingDays: Math.ceil(
-          (trial.endTime - new Date()) / (1000 * 60 * 60 * 24)
-        ),
-        limits: trial.limits,
-      },
-      subscription: {
-        id: subscription._id,
-        plan: subscription.plan,
-        status: subscription.status,
-      },
-      timestamp: new Date(),
-    });
-  }
-
-  return res.status(201).json(
-    new ApiResponse(
-      201,
-      {
-        trial: {
-          id: trial._id,
-          startTime: trial.startTime,
-          endTime: trial.endTime,
-          status: trial.status,
-          limits: trial.limits,
-          remainingDays: Math.ceil(
-            (trial.endTime - new Date()) / (1000 * 60 * 60 * 24)
-          ),
-        },
-        subscription: {
-          id: subscription._id,
-          plan: subscription.plan,
-          status: subscription.status,
-          limits: subscription.limits,
-        },
-      },
-      "Trial started successfully"
-    )
-  );
-});
-
 // Upgrade to paid subscription
 export const upgradeSubscription = asyncHandler(async (req, res) => {
   const userId = req.user._id;
@@ -209,8 +148,8 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
     throw new ApiError(404, "Subscription plan not found");
   }
 
-  if (plan.type === "free" || plan.type === "trial") {
-    throw new ApiError(400, "Cannot upgrade to free or trial plan");
+  if (plan.type === "free") {
+    throw new ApiError(400, "Cannot upgrade to free plan");
   }
 
   // Check if user has an active subscription
@@ -265,16 +204,6 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
     await subscription.save();
   }
 
-  // Update trial status if exists
-  const trial = await Trial.findOne({ userId, status: "active" });
-  if (trial) {
-    trial.status = "converted";
-    trial.conversion.converted = true;
-    trial.conversion.convertedAt = now;
-    trial.conversion.convertedTo = plan.type;
-    await trial.save();
-  }
-
   // Emit subscription upgrade event
   if (req.socketIO) {
     req.socketIO.emitToUser(userId, "subscription_upgraded", {
@@ -288,14 +217,6 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
         currency: subscription.currency,
         currentPeriodEnd: subscription.currentPeriodEnd,
       },
-      trial: trial
-        ? {
-            id: trial._id,
-            status: trial.status,
-            converted: trial.conversion.converted,
-            convertedAt: trial.conversion.convertedAt,
-          }
-        : null,
       timestamp: new Date(),
     });
   }
@@ -317,14 +238,6 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
           limits: subscription.limits,
           features: subscription.features,
         },
-        trial: trial
-          ? {
-              id: trial._id,
-              status: trial.status,
-              converted: trial.conversion.converted,
-              convertedAt: trial.conversion.convertedAt,
-            }
-          : null,
       },
       "Subscription upgraded successfully"
     )
@@ -368,39 +281,135 @@ export const cancelSubscription = asyncHandler(async (req, res) => {
 export const getSubscriptionUsage = asyncHandler(async (req, res) => {
   const userId = req.user._id;
 
-  const subscription = await Subscription.findOne({ userId }).populate(
+  let subscription = await Subscription.findOne({ userId }).populate(
     "planId",
     "name displayName features"
   );
 
+  // Auto-create free subscription if user doesn't have one
   if (!subscription) {
-    throw new ApiError(404, "No subscription found");
+    console.log(
+      "🆕 No subscription found, creating free plan for user:",
+      userId
+    );
+
+    // Get free plan
+    const freePlan = await SubscriptionPlan.findOne({
+      type: "free",
+      status: "active",
+    });
+
+    if (!freePlan) {
+      throw new ApiError(404, "Free plan not found. Please contact support.");
+    }
+
+    // Create free subscription
+    const subscriptionData = createSubscriptionData(
+      userId,
+      freePlan._id,
+      freePlan,
+      "monthly", // Free plan doesn't really have billing cycle
+      0, // Free plan amount
+      freePlan.price.currency || "USD",
+      freePlan.features,
+      freePlan.features
+    );
+
+    subscription = new Subscription(subscriptionData);
+    await subscription.save();
+
+    // Populate planId
+    subscription = await Subscription.findById(subscription._id).populate(
+      "planId",
+      "name displayName features"
+    );
+
+    console.log("✅ Free subscription created for user:", userId);
   }
 
   const plan = subscription.planId;
-  const usage = subscription.usage;
   const limits = subscription.limits;
+
+  // Get today's date for filtering
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Get AI Text Writer service
+  const textWriterService = await Service.findOne({ type: "ai_text_writer" });
+
+  // Calculate real-time usage from ServiceUsage for AI Text Writer
+  let wordsUsedToday = 0;
+  let requestsUsedToday = 0;
+
+  if (textWriterService) {
+    const todayTextUsage = await ServiceUsage.aggregate([
+      {
+        $match: {
+          userId: userId,
+          serviceId: textWriterService._id,
+          "request.timestamp": { $gte: today },
+          "response.success": true,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalWords: { $sum: "$response.data.wordsGenerated" },
+          totalRequests: { $sum: 1 },
+        },
+      },
+    ]);
+
+    wordsUsedToday = todayTextUsage[0]?.totalWords || 0;
+    requestsUsedToday = todayTextUsage[0]?.totalRequests || 0;
+  }
+
+  // Get AI Image Generator service (if exists)
+  const imageService = await Service.findOne({ type: "ai_image_generator" });
+  let imagesUsedToday = 0;
+
+  if (imageService) {
+    const todayImageUsage = await ServiceUsage.aggregate([
+      {
+        $match: {
+          userId: userId,
+          serviceId: imageService._id,
+          "request.timestamp": { $gte: today },
+          "response.success": true,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalImages: { $sum: "$response.data.imagesGenerated" },
+        },
+      },
+    ]);
+
+    imagesUsedToday = todayImageUsage[0]?.totalImages || 0;
+  }
+
+  // Get chatbots count
+  const usage = subscription.usage || {};
+  const chatbotsUsed = usage.chatbotsUsed || 0;
 
   // Calculate usage percentages
   const usageStats = {
     aiTextWriter: {
-      wordsUsed: usage.wordsUsed || 0,
+      wordsUsed: wordsUsedToday,
       wordsLimit: limits.aiTextWriter?.wordsPerDay || 0,
       wordsPercentage: limits.aiTextWriter?.wordsPerDay
-        ? Math.round(
-            ((usage.wordsUsed || 0) / limits.aiTextWriter.wordsPerDay) * 100
-          )
+        ? Math.round((wordsUsedToday / limits.aiTextWriter.wordsPerDay) * 100)
         : 0,
-      requestsUsed: 0, // This would need to be tracked separately
+      requestsUsed: requestsUsedToday,
       requestsLimit: limits.aiTextWriter?.requestsPerDay || 0,
     },
     aiImageGenerator: {
-      imagesUsed: usage.imagesUsed || 0,
+      imagesUsed: imagesUsedToday,
       imagesLimit: limits.aiImageGenerator?.imagesPerDay || 0,
       imagesPercentage: limits.aiImageGenerator?.imagesPerDay
         ? Math.round(
-            ((usage.imagesUsed || 0) / limits.aiImageGenerator.imagesPerDay) *
-              100
+            (imagesUsedToday / limits.aiImageGenerator.imagesPerDay) * 100
           )
         : 0,
     },
@@ -412,13 +421,10 @@ export const getSubscriptionUsage = asyncHandler(async (req, res) => {
         : 0,
     },
     aiChatbot: {
-      chatbotsUsed: usage.chatbotsUsed || 0,
+      chatbotsUsed: chatbotsUsed,
       chatbotsLimit: limits.aiChatbot?.chatbotsPerAccount || 0,
       chatbotsPercentage: limits.aiChatbot?.chatbotsPerAccount
-        ? Math.round(
-            ((usage.chatbotsUsed || 0) / limits.aiChatbot.chatbotsPerAccount) *
-              100
-          )
+        ? Math.round((chatbotsUsed / limits.aiChatbot.chatbotsPerAccount) * 100)
         : 0,
     },
   };
@@ -436,10 +442,16 @@ export const getSubscriptionUsage = asyncHandler(async (req, res) => {
           currentPeriodEnd: subscription.currentPeriodEnd,
         },
         usage: usageStats,
-        lastResetDate: usage.lastResetDate,
-        nextResetDate: new Date(
-          usage.lastResetDate.getTime() + 24 * 60 * 60 * 1000
-        ),
+        lastResetDate:
+          usage.lastResetDate || subscription.createdAt || new Date(),
+        nextResetDate: (() => {
+          const resetDate = new Date(
+            usage.lastResetDate || subscription.createdAt || new Date()
+          );
+          resetDate.setDate(resetDate.getDate() + 1);
+          resetDate.setHours(0, 0, 0, 0);
+          return resetDate;
+        })(),
       },
       "Subscription usage retrieved successfully"
     )

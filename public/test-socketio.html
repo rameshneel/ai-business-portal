@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Socket.IO Text Generation Test</title>
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #555;
+            font-weight: 600;
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        #status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+        .connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        #output {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 5px;
+            min-height: 200px;
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .chunk {
+            background: #e8f5e9;
+            padding: 5px;
+            margin: 2px 0;
+            border-left: 3px solid #4caf50;
+        }
+        .info {
+            color: #2196f3;
+        }
+        .success {
+            color: #4caf50;
+            font-weight: bold;
+        }
+        .error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 Socket.IO Text Generation Test</h1>
+        
+        <div class="input-group">
+            <label>Server URL:</label>
+            <input type="text" id="serverUrl" value="http://localhost:5000">
+        </div>
+
+        <div class="input-group">
+            <label>Access Token (from Postman login):</label>
+            <textarea id="accessToken" placeholder="Paste your JWT access token here"></textarea>
+        </div>
+
+        <button onclick="connectSocket()">Connect</button>
+        <button onclick="disconnectSocket()">Disconnect</button>
+
+        <div id="status" class="disconnected">Disconnected</div>
+
+        <hr style="margin: 30px 0;">
+
+        <h3>Generate Text:</h3>
+        
+        <div class="input-group">
+            <label>Prompt:</label>
+            <textarea id="prompt" placeholder="Write about the future of AI in healthcare">Write about the future of AI in healthcare</textarea>
+        </div>
+
+        <div class="input-group">
+            <label>Content Type:</label>
+            <select id="contentType">
+                <option value="blog_post">Blog Post</option>
+                <option value="social_media">Social Media</option>
+                <option value="email">Email</option>
+                <option value="product_description">Product Description</option>
+                <option value="ad_copy">Ad Copy</option>
+                <option value="general">General</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Tone:</label>
+            <select id="tone">
+                <option value="professional">Professional</option>
+                <option value="casual">Casual</option>
+                <option value="creative">Creative</option>
+                <option value="persuasive">Persuasive</option>
+                <option value="friendly">Friendly</option>
+                <option value="formal">Formal</option>
+            </select>
+        </div>
+
+        <div class="input-group">
+            <label>Length:</label>
+            <select id="length">
+                <option value="short">Short</option>
+                <option value="medium" selected>Medium</option>
+                <option value="long">Long</option>
+            </select>
+        </div>
+
+        <button onclick="generateText()" id="generateBtn">Generate Text via Socket.IO</button>
+        <button onclick="clearOutput()">Clear Output</button>
+
+        <h3>Output:</h3>
+        <div id="output"></div>
+    </div>
+
+    <script>
+        let socket = null;
+        let isGenerating = false;
+        let streamingText = ''; // Store accumulated text for streaming
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            
+            // If it's a chunk, don't add timestamp
+            if (type === 'chunk') {
+                output.innerHTML += message;
+            } else {
+                output.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            }
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+            streamingText = ''; // Reset streaming text
+        }
+
+        function connectSocket() {
+            const serverUrl = document.getElementById('serverUrl').value;
+            const token = document.getElementById('accessToken').value;
+
+            if (!token) {
+                alert('Please enter your access token');
+                return;
+            }
+
+            log('Connecting to server...', 'info');
+
+            socket = io(serverUrl, {
+                auth: { token },
+                transports: ['websocket', 'polling']
+            });
+
+            socket.on('connect', () => {
+                log('✅ Connected to server!', 'success');
+                document.getElementById('status').textContent = 'Connected';
+                document.getElementById('status').className = 'connected';
+            });
+
+            socket.on('connected', (data) => {
+                log(`✅ Server confirmed connection. User: ${data.user.email}`, 'success');
+            });
+
+            socket.on('disconnect', () => {
+                log('❌ Disconnected from server', 'error');
+                document.getElementById('status').textContent = 'Disconnected';
+                document.getElementById('status').className = 'disconnected';
+            });
+
+            socket.on('connect_error', (error) => {
+                log(`❌ Connection error: ${error.message}`, 'error');
+                document.getElementById('status').textContent = 'Error';
+                document.getElementById('status').className = 'disconnected';
+            });
+
+            // Text Generation Events
+            socket.on('text_generation_started', (data) => {
+                log(`📝 Generation started: ${data.contentType}`, 'info');
+                isGenerating = true;
+            });
+
+            socket.on('text_generation_chunk', (data) => {
+                // Show chunks with typewriter effect
+                const output = document.getElementById('output');
+                output.innerHTML += `<div class="chunk">${data.chunk}</div>`;
+                output.scrollTop = output.scrollHeight;
+            });
+
+            socket.on('text_generation_complete', (data) => {
+                log(`\n✅ Generation complete!`, 'success');
+                log(`Words generated: ${data.wordsGenerated}`, 'success');
+                log(`Model: ${data.model}`, 'info');
+                isGenerating = false;
+            });
+
+            socket.on('text_generation_error', (data) => {
+                log(`❌ Error: ${data.error}`, 'error');
+                isGenerating = false;
+            });
+        }
+
+        function disconnectSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+                log('Disconnecting from server...', 'info');
+            }
+        }
+
+        function generateText() {
+            if (!socket || !socket.connected) {
+                alert('Please connect to server first');
+                return;
+            }
+
+            if (isGenerating) {
+                alert('Text generation in progress. Please wait...');
+                return;
+            }
+
+            const prompt = document.getElementById('prompt').value;
+            const contentType = document.getElementById('contentType').value;
+            const tone = document.getElementById('tone').value;
+            const length = document.getElementById('length').value;
+
+            log(`\n🚀 Generating text via Socket.IO...`, 'info');
+            log(`Prompt: ${prompt}`, 'info');
+            log(`Content Type: ${contentType}`, 'info');
+            log(`Tone: ${tone}`, 'info');
+            log(`Length: ${length}`, 'info');
+
+            socket.emit('generate_text', {
+                prompt,
+                contentType,
+                tone,
+                length,
+                language: 'English'
+            });
+        }
+    </script>
+</body>
+</html>
