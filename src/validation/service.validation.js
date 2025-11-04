@@ -47,7 +47,42 @@ export const validateTextGeneration = [
     .withMessage("Language must be between 2 and 10 characters"),
 ];
 
+// Image Generation Validation
+export const validateImageGeneration = [
+  body("prompt")
+    .trim()
+    .notEmpty()
+    .withMessage("Prompt is required")
+    .isLength({ min: 3, max: 4000 })
+    .withMessage("Prompt must be between 3 and 4000 characters"),
+
+  body("size")
+    .optional()
+    .isIn(["1024x1024", "1792x1024", "1024x1792"])
+    .withMessage("Size must be one of: 1024x1024, 1792x1024, 1024x1792"),
+
+  body("quality")
+    .optional()
+    .isIn(["standard", "hd"])
+    .withMessage('Quality must be "standard" or "hd"'),
+
+  body("style")
+    .optional()
+    .isIn([
+      "vivid",
+      "natural",
+      "realistic",
+      "artistic",
+      "anime",
+      "3d-render",
+      "oil-painting",
+      "watercolor",
+    ])
+    .withMessage(
+      "Style must be one of: vivid, natural, realistic, artistic, anime, 3d-render, oil-painting, watercolor"
+    ),
+];
+
 // Future validation for other services can be added here:
-// export const validateImageGeneration = [...];
 // export const validateSearchQuery = [...];
 // export const validateChatbotCreation = [...];

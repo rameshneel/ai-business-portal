@@ -173,7 +173,7 @@ export class SocketIOService {
       // Import and call the service
       try {
         const { aiTextWriterService } = await import(
-          "../../services/ai/services/textWriter/textWriterService.js"
+          "../../services/ai/services/textWriter/index.js"
         );
 
         // Start streaming

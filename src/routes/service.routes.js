@@ -5,9 +5,16 @@ import {
   getTextHistory,
   getUsageStats,
   getTextWriterOptions,
+  generateImage,
+  getImageHistory,
+  getImageStats,
+  getImageOptions,
 } from "../controllers/service.controller.js";
 import { verifyJWT } from "../middleware/auth.middleware.js";
-import { validateTextGeneration } from "../validation/service.validation.js";
+import {
+  validateTextGeneration,
+  validateImageGeneration,
+} from "../validation/service.validation.js";
 
 const router = express.Router();
 
@@ -28,5 +35,26 @@ router.get("/text/options", verifyJWT, getTextWriterOptions);
 
 // Get Usage Statistics
 router.get("/text/usage", verifyJWT, getUsageStats);
+
+// ========================================
+// AI IMAGE GENERATOR SERVICE ROUTES
+// ========================================
+
+// Generate AI Image
+router.post(
+  "/image/generate",
+  verifyJWT,
+  validateImageGeneration,
+  generateImage
+);
+
+// Get Image Generation History
+router.get("/image/history", verifyJWT, getImageHistory);
+
+// Get Image Generation Options (Sizes, Qualities, Styles)
+router.get("/image/options", verifyJWT, getImageOptions);
+
+// Get Image Usage Statistics
+router.get("/image/usage", verifyJWT, getImageStats);
 
 export default router;

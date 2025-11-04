@@ -1,2 +1,2 @@
 // Export image generator service
-export * from "./imageGenerator.js";
+export * from "./imageGeneratorService.js";

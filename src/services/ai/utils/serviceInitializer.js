@@ -91,3 +91,96 @@ export const initializeAITextWriterService = async () => {
     throw error;
   }
 };
+
+// Initialize AI Image Generator Service in Database
+export const initializeAIImageGeneratorService = async () => {
+  try {
+    // Check if service already exists
+    const existingService = await Service.findOne({
+      type: "ai_image_generator",
+    });
+    if (existingService) {
+      console.log("✅ AI Image Generator service already exists");
+      return existingService;
+    }
+
+    // Create new service
+    const service = new Service({
+      name: "AI Image Generator",
+      type: "ai_image_generator",
+      description:
+        "Generate high-quality images from text prompts using DALL·E 3",
+      category: "AI Content Generation",
+
+      // API Configuration
+      apiConfig: {
+        provider: "openai",
+        apiKey: process.env.OPENAI_API_KEY || "sk-your-openai-api-key",
+        baseUrl: "https://api.openai.com/v1",
+        endpoints: {
+          generate: "images/generations",
+          status: "models",
+        },
+      },
+
+      // Service Status
+      status: "active",
+
+      // Usage Limits
+      limits: {
+        dailyRequests: 50,
+        monthlyRequests: 1500,
+        maxImagesPerRequest: 1, // DALL·E 3 supports 1 image per request
+      },
+
+      // Pricing
+      pricing: {
+        free: {
+          imagesPerDay: 3,
+          requestsPerDay: 3,
+        },
+        paid: {
+          imagesPerDay: 100,
+          requestsPerDay: 100,
+        },
+      },
+
+      // Features
+      features: [
+        "Multiple provider support (Pollinations, Qwen, Stability AI, Hugging Face, DALL·E 3)",
+        "Multiple image sizes",
+        "HD quality option",
+        "8 style options (vivid, natural, realistic, artistic, anime, 3d-render, oil-painting, watercolor)",
+        "Prompt revision",
+        "High-quality image generation",
+        "Free tier support for development",
+        "Permanent image storage",
+      ],
+
+      // Statistics
+      statistics: {
+        totalRequests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        totalImages: 0,
+        averageResponseTime: 0,
+      },
+
+      // Configuration
+      config: {
+        defaultModel: "dall-e-3",
+        defaultSize: "1024x1024",
+        defaultQuality: "standard",
+        defaultStyle: "vivid",
+        timeout: 60000, // 60 seconds
+      },
+    });
+
+    await service.save();
+    console.log("✅ AI Image Generator service created successfully");
+    return service;
+  } catch (error) {
+    console.error("❌ Error creating AI Image Generator service:", error);
+    throw error;
+  }
+};

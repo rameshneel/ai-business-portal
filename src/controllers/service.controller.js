@@ -1,12 +1,54 @@
-import { asyncHandler } from "../utils/asyncHandler.js";
-import { ApiError } from "../utils/ApiError.js";
-import { ApiResponse } from "../utils/ApiResponse.js";
 import ServiceUsage from "../models/serviceUsage.model.js";
 import Service from "../models/service.model.js";
 import User from "../models/user.model.js";
 import Subscription from "../models/subscription.model.js";
 import SubscriptionPlan from "../models/subscriptionPlan.model.js";
-import { aiTextWriterService } from "../services/ai/services/textWriter/textWriterService.js";
+import { aiTextWriterService } from "../services/ai/services/textWriter/index.js";
+import { aiImageGeneratorService } from "../services/ai/services/imageGenerator/index.js";
+import {
+  asyncHandler,
+  ApiError,
+  ApiResponse,
+  getImageUrl,
+  checkUsageLimits,
+  getTodayUsage,
+  saveFailedUsage,
+  logger,
+} from "../utils/index.js";
+import {
+  DEFAULT_WORD_LIMIT,
+  DEFAULT_IMAGE_LIMIT,
+  WORD_ESTIMATES,
+  ERROR_CODES,
+} from "../constants/index.js";
+
+// Calculate image generation cost based on provider, size and quality
+// Pricing: https://openai.com/pricing (DALL·E 3), Free providers have $0 cost
+const calculateImageCost = (provider, size, quality) => {
+  // Free providers
+  if (
+    provider === "qwen" ||
+    provider === "wanx-v1" ||
+    provider === "pollinations" ||
+    provider === "stability" ||
+    provider === "huggingface" ||
+    provider === "hf"
+  ) {
+    return 0; // All free tier providers
+  }
+
+  // DALL·E 3 pricing (as of 2024):
+  // Standard quality: $0.04/image (1024x1024), $0.08/image (1792x1024 or 1024x1792)
+  // HD quality: $0.08/image (1024x1024), $0.12/image (1792x1024 or 1024x1792)
+  const isLargeSize = size !== "1024x1024";
+  const isHD = quality === "hd";
+
+  if (isHD) {
+    return isLargeSize ? 0.12 : 0.08; // HD pricing
+  } else {
+    return isLargeSize ? 0.08 : 0.04; // Standard pricing
+  }
+};
 
 // AI Text Writer Service
 export const generateText = asyncHandler(async (req, res) => {
@@ -34,31 +76,20 @@ export const generateText = asyncHandler(async (req, res) => {
       throw new ApiError(404, "AI Text Writer service not available");
     }
 
-    // Check usage limits
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Get today's usage
+    const usageData = await getTodayUsage(
+      userId,
+      service._id,
+      "wordsGenerated"
+    );
+    const wordsUsedToday = usageData.total;
+    logger.info("Words used today", {
+      userId: userId.toString(),
+      wordsUsedToday,
+    });
 
-    const todayUsage = await ServiceUsage.aggregate([
-      {
-        $match: {
-          userId: userId,
-          serviceId: service._id,
-          "request.timestamp": { $gte: today },
-          "response.success": true, // Only count successful requests
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalWords: { $sum: "$response.data.wordsGenerated" },
-        },
-      },
-    ]);
-
-    const wordsUsedToday = todayUsage[0]?.totalWords || 0;
-    console.log("🔍 Words used today:", wordsUsedToday);
     // Get limits based on subscription (Free or Paid)
-    let maxWords = 500; // Default Free plan limit
+    let maxWords = DEFAULT_WORD_LIMIT;
     if (hasActiveSubscription && subscription.planId) {
       const plan = await SubscriptionPlan.findById(subscription.planId);
       if (plan && plan.features.aiTextWriter.enabled) {
@@ -68,102 +99,37 @@ export const generateText = asyncHandler(async (req, res) => {
 
     // For testing: Set default limit if 0
     if (maxWords === 0) {
-      maxWords = 500; // Default limit for testing (500 words)
-    }
-
-    // CRITICAL: Enforce limit - prevent 100%+ usage (Non-streaming endpoint)
-    if (wordsUsedToday >= maxWords) {
-      const usagePercentage = Math.round((wordsUsedToday / maxWords) * 100);
-
-      // Emit limit exceeded event via Socket.IO
-      if (req.socketIO) {
-        req.socketIO.emitToUser(userId, "usage_limit_exceeded", {
-          service: "ai_text_writer",
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            percentage: usagePercentage,
-            remaining: 0,
-          },
-          message: `🚫 Daily word limit reached (${maxWords} words). Please upgrade your plan or try again tomorrow.`,
-          timestamp: new Date(),
-        });
-      }
-
-      throw new ApiError(
-        403,
-        `Daily word limit reached (${maxWords} words used). Please upgrade your plan or try again tomorrow.`
-      );
+      maxWords = DEFAULT_WORD_LIMIT;
     }
 
     // Estimate words based on length option
-    const estimateWordsByLength = (lengthOption) => {
-      switch (lengthOption) {
-        case "short":
-          return 150; // Max estimate for short (50-150 words)
-        case "long":
-          return 500; // Estimate for long (400+ words)
-        case "medium":
-        default:
-          return 400; // Estimate for medium (150-400 words)
-      }
-    };
+    const estimatedWords =
+      WORD_ESTIMATES[length || "medium"] || WORD_ESTIMATES.medium;
 
-    const estimatedWords = estimateWordsByLength(length || "medium");
-    const totalWordsAfterGeneration = wordsUsedToday + estimatedWords;
+    // Check usage limits using utility function
+    const usageCheck = await checkUsageLimits({
+      userId,
+      serviceId: service._id,
+      limitType: "words",
+      currentUsage: wordsUsedToday,
+      maxLimit: maxWords,
+      estimatedUsage: estimatedWords,
+      socketIO: req.socketIO,
+      serviceName: "ai_text_writer",
+    });
 
-    // Check if estimated generation will exceed limit
-    if (totalWordsAfterGeneration > maxWords) {
-      const remainingWords = maxWords - wordsUsedToday;
-      const usagePercentage = Math.round((wordsUsedToday / maxWords) * 100);
-
-      // Emit warning that this request might exceed limit
-      if (req.socketIO) {
-        req.socketIO.emitToUser(userId, "usage_limit_warning", {
-          service: "ai_text_writer",
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            percentage: usagePercentage,
-            remaining: remainingWords,
-            estimated: estimatedWords,
-          },
-          message: `⚠️ Warning: This request may exceed your daily limit. Only ${remainingWords} words remaining.`,
-          timestamp: new Date(),
-        });
-      }
-
-      throw new ApiError(
-        403,
-        `Insufficient words remaining (${remainingWords} words left). Estimated request: ${estimatedWords} words. Please reduce content length or upgrade your plan.`
-      );
+    if (!usageCheck.allowed) {
+      throw new ApiError(403, usageCheck.message);
     }
 
-    // Emit usage warning if approaching limit (80% threshold)
-    const usagePercentage = (wordsUsedToday / maxWords) * 100;
-    if (req.socketIO && usagePercentage >= 80) {
-      req.socketIO.emitToUser(userId, "usage_warning", {
-        service: "ai_text_writer",
-        usage: {
-          used: wordsUsedToday,
-          limit: maxWords,
-          percentage: Math.round(usagePercentage),
-          remaining: maxWords - wordsUsedToday,
-        },
-        message:
-          usagePercentage >= 95
-            ? `⚠️ You've used ${Math.round(
-                usagePercentage
-              )}% of your daily limit!`
-            : `📊 You've used ${Math.round(
-                usagePercentage
-              )}% of your daily limit.`,
-        timestamp: new Date(),
-      });
-    }
+    // Sanitize input (trim prompt)
+    const sanitizedPrompt = prompt.trim();
 
     // Validate input using service
-    const validation = aiTextWriterService.validateInput(prompt, contentType);
+    const validation = aiTextWriterService.validateInput(
+      sanitizedPrompt,
+      contentType
+    );
     if (!validation.isValid) {
       throw new ApiError(400, validation.errors.join(", "));
     }
@@ -172,23 +138,28 @@ export const generateText = asyncHandler(async (req, res) => {
     if (req.socketIO) {
       req.socketIO.emitToUser(userId, "ai_text_generation_start", {
         contentType: contentType,
-        prompt: prompt,
+        prompt: sanitizedPrompt,
         timestamp: new Date(),
       });
     }
 
     // Generate text using service
-    const result = await aiTextWriterService.generateText(prompt, contentType, {
-      tone,
-      length,
-      language,
-    });
+    const result = await aiTextWriterService.generateText(
+      sanitizedPrompt,
+      contentType,
+      {
+        tone,
+        length,
+        language,
+      }
+    );
 
-    console.log("AI Text Generation Result:", {
+    logger.info("AI Text Generation Result", {
       success: result.success,
       hasContent: !!result.content,
       wordsGenerated: result.wordsGenerated,
       model: result.model,
+      userId: userId.toString(),
     });
 
     if (!result.success) {
@@ -204,7 +175,7 @@ export const generateText = asyncHandler(async (req, res) => {
       serviceId: service._id,
       request: {
         type: contentType || "ai_text_writer",
-        prompt: prompt,
+        prompt: sanitizedPrompt,
         parameters: {
           contentType: contentType,
           tone: tone,
@@ -225,9 +196,16 @@ export const generateText = asyncHandler(async (req, res) => {
 
     try {
       await usageRecord.save();
-      console.log("✅ ServiceUsage saved successfully");
+      logger.info("ServiceUsage saved successfully", {
+        userId: userId.toString(),
+        serviceId: service._id.toString(),
+        wordsGenerated,
+      });
     } catch (saveError) {
-      console.error("❌ ServiceUsage save error:", saveError);
+      logger.error("ServiceUsage save error", {
+        error: saveError.message,
+        userId: userId.toString(),
+      });
       throw saveError;
     }
 
@@ -274,38 +252,30 @@ export const generateText = asyncHandler(async (req, res) => {
       )
     );
   } catch (error) {
-    console.error("AI Text Generation Error:", error);
+    logger.error("AI Text Generation Error", {
+      error: error.message,
+      userId: userId?.toString(),
+      contentType,
+    });
+
+    // Save failed usage using utility function
     if (userId && service) {
-      try {
-        const failedUsage = new ServiceUsage({
-          userId: userId,
-          serviceId: service._id,
-          request: {
-            type: contentType || "ai_text_writer",
-            prompt: prompt,
-            parameters: {
-              contentType: contentType,
-              tone: tone,
-              length: length,
-              language: language,
-            },
-            timestamp: new Date(),
+      await saveFailedUsage({
+        userId,
+        serviceId: service._id,
+        requestType: contentType || "ai_text_writer",
+        requestData: {
+          prompt: req.body.prompt?.trim() || "",
+          parameters: {
+            contentType,
+            tone,
+            length,
+            language,
           },
-          response: {
-            success: false,
-            error: {
-              code: error.code || "GENERATION_ERROR",
-              message: error.message,
-            },
-            timestamp: new Date(),
-          },
-        });
-        await failedUsage.save();
-        console.log("✅ Failed ServiceUsage saved successfully");
-      } catch (saveError) {
-        console.error("❌ Failed ServiceUsage save error:", saveError);
-        // Don't throw here, just log the error
-      }
+        },
+        error,
+        errorCode: ERROR_CODES.TEXT_GENERATION_ERROR,
+      });
     }
 
     if (error instanceof ApiError) {
@@ -520,10 +490,20 @@ export const generateTextStream = async (req, res) => {
       },
     ]);
 
-    const wordsUsedToday = todayUsage[0]?.totalWords || 0;
-    console.log("🔍 Words used today:", wordsUsedToday);
+    // Get today's usage
+    const usageData = await getTodayUsage(
+      userId,
+      service._id,
+      "wordsGenerated"
+    );
+    const wordsUsedToday = usageData.total;
+    logger.info("Stream: Words used today", {
+      userId: userId.toString(),
+      wordsUsedToday,
+    });
+
     // Get limits based on subscription
-    let maxWords = 500; // Default Free plan limit
+    let maxWords = DEFAULT_WORD_LIMIT;
     if (hasActiveSubscription && subscription.planId) {
       const plan = subscription.planId;
       if (plan && plan.features?.aiTextWriter?.enabled) {
@@ -533,121 +513,46 @@ export const generateTextStream = async (req, res) => {
 
     // For testing: Set default limit if 0
     if (maxWords === 0) {
-      maxWords = 500; // Default limit for testing (500 words)
+      maxWords = DEFAULT_WORD_LIMIT;
     }
 
     // Estimate words based on length option
-    const estimateWordsByLength = (lengthOption) => {
-      switch (lengthOption) {
-        case "short":
-          return 150; // Max estimate for short (50-150 words)
-        case "long":
-          return 500; // Estimate for long (400+ words)
-        case "medium":
-        default:
-          return 400; // Estimate for medium (150-400 words)
-      }
-    };
+    const estimatedWords =
+      WORD_ESTIMATES[length || "medium"] || WORD_ESTIMATES.medium;
 
-    const estimatedWords = estimateWordsByLength(length || "medium");
-    const totalWordsAfterGeneration = wordsUsedToday + estimatedWords;
+    // Check usage limits using utility function
+    const usageCheck = await checkUsageLimits({
+      userId,
+      serviceId: service._id,
+      limitType: "words",
+      currentUsage: wordsUsedToday,
+      maxLimit: maxWords,
+      estimatedUsage: estimatedWords,
+      socketIO: req.socketIO,
+      serviceName: "ai_text_writer",
+    });
 
-    // CRITICAL: Block if limit will be exceeded (prevent 100%+ usage)
-    if (wordsUsedToday >= maxWords) {
-      const usagePercentage = Math.round((wordsUsedToday / maxWords) * 100);
-
-      // Emit limit exceeded event via Socket.IO
-      if (req.socketIO) {
-        req.socketIO.emitToUser(userId, "usage_limit_exceeded", {
-          service: "ai_text_writer",
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            percentage: usagePercentage,
-            remaining: 0,
-          },
-          message: `🚫 Daily word limit reached (${maxWords} words). Please upgrade your plan or try again tomorrow.`,
-          timestamp: new Date(),
-        });
-      }
-
+    if (!usageCheck.allowed) {
       res.write(
         `data: ${JSON.stringify({
-          error: `Daily word limit reached (${maxWords} words used). Please upgrade your plan or try again tomorrow.`,
-          limitExceeded: true,
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            percentage: usagePercentage,
-          },
+          error: usageCheck.message,
+          limitExceeded: usageCheck.reason === "limit_exceeded",
+          limitWarning: usageCheck.reason === "insufficient_remaining",
+          usage: usageCheck.usage,
         })}\n\n`
       );
       res.end();
       return;
     }
 
-    // Check if estimated generation will exceed limit
-    if (totalWordsAfterGeneration > maxWords) {
-      const remainingWords = maxWords - wordsUsedToday;
-      const usagePercentage = Math.round((wordsUsedToday / maxWords) * 100);
-
-      // Emit warning that this request might exceed limit
-      if (req.socketIO) {
-        req.socketIO.emitToUser(userId, "usage_limit_warning", {
-          service: "ai_text_writer",
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            percentage: usagePercentage,
-            remaining: remainingWords,
-            estimated: estimatedWords,
-          },
-          message: `⚠️ Warning: This request may exceed your daily limit. Only ${remainingWords} words remaining.`,
-          timestamp: new Date(),
-        });
-      }
-
-      res.write(
-        `data: ${JSON.stringify({
-          error: `Insufficient words remaining (${remainingWords} words left). Estimated request: ${estimatedWords} words. Please reduce content length or upgrade your plan.`,
-          limitWarning: true,
-          usage: {
-            used: wordsUsedToday,
-            limit: maxWords,
-            remaining: remainingWords,
-            estimated: estimatedWords,
-          },
-        })}\n\n`
-      );
-      res.end();
-      return;
-    }
-
-    // Emit usage warning if approaching limit (80% threshold)
-    const usagePercentage = (wordsUsedToday / maxWords) * 100;
-    if (req.socketIO && usagePercentage >= 80) {
-      req.socketIO.emitToUser(userId, "usage_warning", {
-        service: "ai_text_writer",
-        usage: {
-          used: wordsUsedToday,
-          limit: maxWords,
-          percentage: Math.round(usagePercentage),
-          remaining: maxWords - wordsUsedToday,
-        },
-        message:
-          usagePercentage >= 95
-            ? `⚠️ You've used ${Math.round(
-                usagePercentage
-              )}% of your daily limit!`
-            : `📊 You've used ${Math.round(
-                usagePercentage
-              )}% of your daily limit.`,
-        timestamp: new Date(),
-      });
-    }
+    // Sanitize input
+    const sanitizedPrompt = prompt.trim();
 
     // Validate input using service
-    const validation = aiTextWriterService.validateInput(prompt, contentType);
+    const validation = aiTextWriterService.validateInput(
+      sanitizedPrompt,
+      contentType
+    );
     if (!validation.isValid) {
       res.write(
         `data: ${JSON.stringify({
@@ -662,18 +567,22 @@ export const generateTextStream = async (req, res) => {
     if (req.socketIO && userId) {
       req.socketIO.emitToUser(userId, "ai_text_generation_start", {
         contentType: contentType,
-        prompt: prompt,
+        prompt: sanitizedPrompt,
         mode: "streaming",
         timestamp: new Date(),
       });
     }
 
     // Start streaming generator
-    const stream = aiTextWriterService.generateTextStream(prompt, contentType, {
-      tone,
-      length,
-      language,
-    });
+    const stream = aiTextWriterService.generateTextStream(
+      sanitizedPrompt,
+      contentType,
+      {
+        tone,
+        length,
+        language,
+      }
+    );
 
     // Process generator: only strings are yielded, final object is returned
     for await (const chunk of stream) {
@@ -696,20 +605,20 @@ export const generateTextStream = async (req, res) => {
 
     // Save usage record only if user is authenticated and text was generated
     if (!userId) {
-      console.warn("⚠️ Stream: No userId found, skipping usage save");
+      logger.warn("Stream: No userId found, skipping usage save");
     } else if (trimmedText.length > 0 && wordsGenerated > 0) {
       try {
         const service = await Service.findOne({ type: "ai_text_writer" });
 
         if (!service) {
-          console.error("❌ Stream: AI Text Writer service not found");
+          logger.error("Stream: AI Text Writer service not found");
         } else {
           const usageRecord = new ServiceUsage({
             userId: userId,
             serviceId: service._id,
             request: {
               type: contentType || "ai_text_writer",
-              prompt: prompt,
+              prompt: sanitizedPrompt,
               parameters: {
                 contentType,
                 tone,
@@ -729,7 +638,7 @@ export const generateTextStream = async (req, res) => {
             },
           });
           await usageRecord.save();
-          console.log("✅ Stream ServiceUsage saved successfully:", {
+          logger.info("Stream ServiceUsage saved successfully", {
             wordsGenerated,
             userId: userId.toString(),
             serviceId: service._id.toString(),
@@ -790,11 +699,14 @@ export const generateTextStream = async (req, res) => {
           }
         }
       } catch (saveError) {
-        console.error("❌ Streaming ServiceUsage save error:", saveError);
+        logger.error("Streaming ServiceUsage save error", {
+          error: saveError.message,
+          userId: userId?.toString(),
+        });
         // Don't fail the stream if saving fails
       }
     } else {
-      console.warn("⚠️ Stream: No text generated, skipping usage save", {
+      logger.warn("Stream: No text generated, skipping usage save", {
         fullTextLength: fullText?.length || 0,
         wordsGenerated,
       });
@@ -811,7 +723,10 @@ export const generateTextStream = async (req, res) => {
       })}\n\n`
     );
   } catch (error) {
-    console.error("❌ Streaming error:", error);
+    logger.error("Streaming error", {
+      error: error.message,
+      userId: userId?.toString(),
+    });
     // Send error via SSE format
     res.write(
       `data: ${JSON.stringify({
@@ -841,6 +756,390 @@ export const getTextWriterOptions = asyncHandler(async (req, res) => {
         lengths: lengths,
       },
       "Service options retrieved successfully"
+    )
+  );
+});
+
+// ========================================
+// AI IMAGE GENERATOR SERVICE
+// ========================================
+
+// Generate AI Image
+export const generateImage = asyncHandler(async (req, res) => {
+  const { prompt, size, quality, style } = req.body;
+  const userId = req.user._id;
+  let service = null;
+
+  // Validation
+  if (!prompt) {
+    throw new ApiError(400, "Prompt is required");
+  }
+
+  try {
+    // Sanitize input
+    const sanitizedPrompt = prompt.trim();
+
+    // Validate prompt
+    aiImageGeneratorService.validatePrompt(sanitizedPrompt);
+
+    // Check if user has active subscription
+    const subscription = await Subscription.findOne({ userId });
+    const hasActiveSubscription = subscription && subscription.isActive();
+
+    // Get AI Image Generator service
+    service = await Service.findOne({
+      type: "ai_image_generator",
+      status: "active",
+    });
+    if (!service) {
+      throw new ApiError(404, "AI Image Generator service not available");
+    }
+
+    // Get today's usage
+    const imageUsageData = await getTodayUsage(
+      userId,
+      service._id,
+      "imagesGenerated"
+    );
+    const imagesUsedToday = imageUsageData.total;
+    logger.info("Images used today", {
+      userId: userId.toString(),
+      imagesUsedToday,
+    });
+
+    // Get limits based on subscription
+    let maxImages = DEFAULT_IMAGE_LIMIT;
+    if (hasActiveSubscription && subscription.planId) {
+      const plan = await SubscriptionPlan.findById(subscription.planId);
+      if (plan && plan.features.aiImageGenerator.enabled) {
+        maxImages = plan.features.aiImageGenerator.imagesPerDay;
+      }
+    }
+
+    // For testing: Set default limit if 0
+    if (maxImages === 0) {
+      maxImages = DEFAULT_IMAGE_LIMIT;
+    }
+
+    // Check usage limits (images don't have estimated usage, so pass 0)
+    const usageCheck = await checkUsageLimits({
+      userId,
+      serviceId: service._id,
+      limitType: "images",
+      currentUsage: imagesUsedToday,
+      maxLimit: maxImages,
+      estimatedUsage: 0, // Images are always 1 per request
+      socketIO: req.socketIO,
+      serviceName: "ai_image_generator",
+    });
+
+    if (!usageCheck.allowed) {
+      throw new ApiError(403, usageCheck.message);
+    }
+
+    const startTime = Date.now();
+
+    // Generate image (with storage enabled)
+    const imageResult = await aiImageGeneratorService.generateImage(
+      sanitizedPrompt,
+      {
+        size: size || "1024x1024",
+        quality: quality || "standard",
+        style: style || "vivid",
+        saveToStorage: true, // Always save to permanent storage
+        userId: userId.toString(), // Pass userId for organizing images
+      }
+    );
+
+    const duration = Date.now() - startTime;
+
+    // Save usage record
+    const imageServiceUsageData = {
+      userId: userId,
+      serviceId: service._id,
+      request: {
+        type: "image_generation", // Required field
+        prompt: sanitizedPrompt,
+        parameters: {
+          size: imageResult.size,
+          quality: imageResult.quality,
+          style: imageResult.style,
+        },
+        timestamp: new Date(),
+      },
+      response: {
+        success: true,
+        data: {
+          imageUrl: imageResult.imageUrl, // Permanent URL
+          dalleImageUrl: imageResult.dalleImageUrl, // Original DALL·E URL (may expire)
+          revisedPrompt: imageResult.revisedPrompt,
+          imagesGenerated: 1,
+          size: imageResult.size,
+          quality: imageResult.quality,
+          style: imageResult.style,
+          isStored: imageResult.isStored || false,
+          storageInfo: imageResult.storageInfo || null,
+        },
+        responseTime: duration, // Use responseTime as per model schema
+        timestamp: new Date(),
+      },
+      cost: {
+        amount: calculateImageCost(
+          imageResult.provider || "qwen",
+          imageResult.size,
+          imageResult.quality
+        ),
+        currency: "USD",
+      },
+      metadata: {
+        model: imageResult.model,
+        isMock: imageResult.isMock || false,
+      },
+    };
+
+    const serviceUsage = new ServiceUsage(imageServiceUsageData);
+    await serviceUsage.save();
+    logger.info("ServiceUsage saved successfully for image generation", {
+      userId: userId.toString(),
+      serviceId: service._id.toString(),
+    });
+
+    // Update remaining images
+    const remainingImages = maxImages - (imagesUsedToday + 1);
+
+    return res.status(200).json(
+      new ApiResponse(
+        200,
+        {
+          imageUrl: imageResult.imageUrl, // Relative path (e.g., "/generated-images/userId/file.png")
+          fullUrl: imageResult.fullUrl || imageResult.imageUrl, // Full URL with host and port (e.g., "http://localhost:5000/generated-images/userId/file.png")
+          dalleImageUrl: imageResult.dalleImageUrl, // Original DALL·E URL
+          revisedPrompt: imageResult.revisedPrompt,
+          originalPrompt: imageResult.originalPrompt || sanitizedPrompt,
+          size: imageResult.size,
+          quality: imageResult.quality,
+          style: imageResult.style,
+          duration: duration,
+          isStored: imageResult.isStored || false, // Whether saved to permanent storage
+          cost: calculateImageCost(
+            imageResult.provider || "qwen",
+            imageResult.size,
+            imageResult.quality
+          ),
+          usage: {
+            imagesUsedToday: imagesUsedToday + 1,
+            maxImages: maxImages,
+            remainingImages: remainingImages,
+          },
+        },
+        "Image generated successfully"
+      )
+    );
+  } catch (error) {
+    logger.error("Image generation error", {
+      error: error.message,
+      userId: userId?.toString(),
+    });
+
+    // Save failed usage record using utility function
+    if (service && userId) {
+      await saveFailedUsage({
+        userId,
+        serviceId: service._id,
+        requestType: "image_generation",
+        requestData: {
+          prompt: req.body.prompt?.trim() || "",
+          parameters: {
+            size: size || "1024x1024",
+            quality: quality || "standard",
+            style: style || "vivid",
+          },
+        },
+        error,
+        errorCode: ERROR_CODES.IMAGE_GENERATION_FAILED,
+      });
+    }
+
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    throw new ApiError(500, `Image generation failed: ${error.message}`);
+  }
+});
+
+// Get user's image generation history
+export const getImageHistory = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+  const { page = 1, limit = 10 } = req.query;
+
+  const service = await Service.findOne({ type: "ai_image_generator" });
+  if (!service) {
+    throw new ApiError(404, "AI Image Generator service not found");
+  }
+
+  const skip = (page - 1) * limit;
+
+  const history = await ServiceUsage.find({
+    userId: userId,
+    serviceId: service._id,
+    "response.success": true,
+  })
+    .sort({ "request.timestamp": -1 })
+    .skip(skip)
+    .limit(parseInt(limit))
+    .select("request response cost metadata createdAt");
+
+  const total = await ServiceUsage.countDocuments({
+    userId: userId,
+    serviceId: service._id,
+    "response.success": true,
+  });
+
+  // Transform history items to include fullUrl for each image
+  const transformedHistory = history.map((item) => {
+    const responseData = item.response?.data || {};
+
+    // Construct fullUrl if not already present
+    let fullUrl = responseData.fullUrl;
+    if (!fullUrl && responseData.imageUrl) {
+      // If imageUrl is relative path, construct full URL
+      if (responseData.imageUrl.startsWith("/")) {
+        fullUrl = getImageUrl(responseData.imageUrl);
+      } else if (
+        responseData.imageUrl.startsWith("http://") ||
+        responseData.imageUrl.startsWith("https://")
+      ) {
+        // Already a full URL (e.g., placeholder URLs)
+        fullUrl = responseData.imageUrl;
+      }
+    }
+
+    // Return item with updated response.data including fullUrl
+    return {
+      ...item.toObject(),
+      response: {
+        ...item.response,
+        data: {
+          ...responseData,
+          fullUrl: fullUrl || responseData.imageUrl, // Ensure fullUrl is always present
+        },
+      },
+    };
+  });
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        history: transformedHistory,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total: total,
+          pages: Math.ceil(total / limit),
+        },
+      },
+      "Image history retrieved successfully"
+    )
+  );
+});
+
+// Get image generation usage statistics
+export const getImageStats = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  const service = await Service.findOne({ type: "ai_image_generator" });
+  if (!service) {
+    throw new ApiError(404, "AI Image Generator service not found");
+  }
+
+  // Get today's usage
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const todayUsage = await ServiceUsage.aggregate([
+    {
+      $match: {
+        userId: userId,
+        serviceId: service._id,
+        "request.timestamp": { $gte: today },
+        "response.success": true,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalImages: { $sum: "$response.data.imagesGenerated" },
+        totalRequests: { $sum: 1 },
+      },
+    },
+  ]);
+
+  // Get this month's usage
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  monthStart.setHours(0, 0, 0, 0);
+
+  const monthUsage = await ServiceUsage.aggregate([
+    {
+      $match: {
+        userId: userId,
+        serviceId: service._id,
+        "request.timestamp": { $gte: monthStart },
+        "response.success": true,
+      },
+    },
+    {
+      $group: {
+        _id: null,
+        totalImages: { $sum: "$response.data.imagesGenerated" },
+        totalRequests: { $sum: 1 },
+      },
+    },
+  ]);
+
+  const subscription = await Subscription.findOne({ userId });
+
+  const maxImages = subscription?.limits?.aiImageGenerator?.imagesPerDay || 3; // Default limit
+  const todayStats = todayUsage[0] || { totalImages: 0, totalRequests: 0 };
+  const monthStats = monthUsage[0] || { totalImages: 0, totalRequests: 0 };
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        today: {
+          imagesUsed: todayStats.totalImages,
+          requests: todayStats.totalRequests,
+          maxImages: maxImages,
+          remainingImages: maxImages - todayStats.totalImages,
+        },
+        thisMonth: {
+          imagesUsed: monthStats.totalImages,
+          requests: monthStats.totalRequests,
+        },
+        accountType: "subscription",
+      },
+      "Image usage statistics retrieved successfully"
+    )
+  );
+});
+
+// Get AI Image Generator service options
+export const getImageOptions = asyncHandler(async (req, res) => {
+  const sizes = aiImageGeneratorService.getSupportedSizes();
+  const qualities = aiImageGeneratorService.getSupportedQualities();
+  const styles = aiImageGeneratorService.getSupportedStyles();
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        sizes: sizes,
+        qualities: qualities,
+        styles: styles,
+      },
+      "Image generator options retrieved successfully"
     )
   );
 });

@@ -7,7 +7,10 @@ import { createServer } from "http";
 import app from "./app.js";
 import connectDB from "./config/database.js";
 import { initializeSocketIO } from "./services/communication/socketIOService.js";
-import { initializeAITextWriterService } from "./services/ai/utils/serviceInitializer.js";
+import {
+  initializeAITextWriterService,
+  initializeAIImageGeneratorService,
+} from "./services/ai/utils/serviceInitializer.js";
 import { initializeSubscriptionPlans } from "./services/subscription/planInitializer.js";
 
 const PORT = process.env.PORT || 5000;
@@ -26,6 +29,7 @@ const startServer = async () => {
 
     // Initialize AI services
     await initializeAITextWriterService();
+    await initializeAIImageGeneratorService();
 
     // Initialize subscription plans
     await initializeSubscriptionPlans();
@@ -37,6 +41,9 @@ const startServer = async () => {
       console.log(`🏥 Health check: http://localhost:${PORT}/health`);
       console.log(
         `📝 AI Text Writer: http://localhost:${PORT}/api/services/text/generate`
+      );
+      console.log(
+        `🎨 AI Image Generator: http://localhost:${PORT}/api/services/image/generate`
       );
       console.log(`🔌 Socket.IO: ws://localhost:${PORT}`);
       console.log(

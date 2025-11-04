@@ -37,6 +37,8 @@ app.use(
         ],
       },
     },
+    // Allow cross-origin resource sharing for images and static files
+    crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
 app.use(compression());
@@ -85,9 +87,25 @@ if (process.env.NODE_ENV === "production") {
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Static files
-app.use("/uploads", express.static("uploads"));
-app.use(express.static("public"));
+// Static files - Set CORS and CORP headers for image access
+const staticOptions = {
+  setHeaders: (res, path) => {
+    // Allow cross-origin access for images
+    res.setHeader("Cross-Origin-Resource-Policy", "cross-origin");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    // Cache images for better performance
+    if (path.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) {
+      res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+    }
+  },
+};
+
+app.use("/uploads", express.static("uploads", staticOptions));
+app.use(
+  "/generated-images",
+  express.static("public/generated-images", staticOptions)
+);
+app.use(express.static("public", staticOptions));
 
 // Health check endpoint
 app.get("/health", (req, res) => {
