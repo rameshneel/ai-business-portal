@@ -42,8 +42,8 @@ export const initializeSubscriptionPlans = async () => {
             enabled: true,
           },
           aiChatbot: {
-            chatbotsPerAccount: 1,
-            messagesPerDay: 20,
+            chatbotsPerAccount: 1, // Free plan: 1 chatbot only
+            messagesPerDay: 20, // 20 queries/day = ~10 queries/hour
             enabled: true,
           },
           prioritySupport: false,
@@ -83,8 +83,8 @@ export const initializeSubscriptionPlans = async () => {
             enabled: true,
           },
           aiChatbot: {
-            chatbotsPerAccount: 5,
-            messagesPerDay: 1000,
+            chatbotsPerAccount: 5, // Basic plan: 5 chatbots
+            messagesPerDay: 1000, // 1000 queries/day = ~41 queries/hour
             enabled: true,
           },
           prioritySupport: true,
@@ -123,8 +123,8 @@ export const initializeSubscriptionPlans = async () => {
             enabled: true,
           },
           aiChatbot: {
-            chatbotsPerAccount: 10,
-            messagesPerDay: 3000,
+            chatbotsPerAccount: 10, // Pro plan: 10 chatbots
+            messagesPerDay: 3000, // 3000 queries/day = ~125 queries/hour
             enabled: true,
           },
           prioritySupport: true,
@@ -164,8 +164,8 @@ export const initializeSubscriptionPlans = async () => {
             enabled: true,
           },
           aiChatbot: {
-            chatbotsPerAccount: 999999999,
-            messagesPerDay: 999999999,
+            chatbotsPerAccount: 999999999, // Enterprise: Unlimited chatbots
+            messagesPerDay: 999999999, // Enterprise: Unlimited queries
             enabled: true,
           },
           prioritySupport: true,

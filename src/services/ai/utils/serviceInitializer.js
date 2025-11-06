@@ -184,3 +184,102 @@ export const initializeAIImageGeneratorService = async () => {
     throw error;
   }
 };
+
+// Initialize AI Chatbot Builder Service in Database
+export const initializeAIChatbotBuilderService = async () => {
+  try {
+    // Check if service already exists
+    const existingService = await Service.findOne({
+      type: "ai_chatbot_builder",
+    });
+    if (existingService) {
+      console.log("✅ AI Chatbot Builder service already exists");
+      return existingService;
+    }
+
+    // Create new service
+    const service = new Service({
+      name: "AI Chatbot Builder",
+      type: "ai_chatbot_builder",
+      description:
+        "Create custom AI chatbots trained on your own data with RAG (Retrieval Augmented Generation)",
+      category: "AI Content Generation",
+
+      // API Configuration
+      apiConfig: {
+        provider: "openai",
+        apiKey: process.env.OPENAI_API_KEY || "sk-your-openai-api-key",
+        baseUrl: "https://api.openai.com/v1",
+        endpoints: {
+          generate: "chat/completions",
+          embeddings: "embeddings",
+          status: "models",
+        },
+      },
+
+      // Service Status
+      status: "active",
+
+      // Usage Limits
+      limits: {
+        dailyRequests: 1000,
+        monthlyRequests: 30000,
+        maxChatbotsPerUser: 10,
+      },
+
+      // Pricing
+      pricing: {
+        free: {
+          chatbotsPerAccount: 0,
+          queriesPerDay: 0,
+        },
+        paid: {
+          chatbotsPerAccount: 10,
+          queriesPerDay: 1000,
+        },
+      },
+
+      // Features
+      features: [
+        "Create custom chatbots with your own data",
+        "Train with PDF and text files",
+        "RAG (Retrieval Augmented Generation) for context-aware responses",
+        "Embeddable widget for external websites",
+        "Conversation history tracking",
+        "Multiple chatbot templates",
+        "Vector database integration (ChromaDB)",
+        "Custom system prompts",
+        "API key authentication for widgets",
+      ],
+
+      // Statistics
+      statistics: {
+        totalRequests: 0,
+        successfulRequests: 0,
+        failedRequests: 0,
+        totalChatbots: 0,
+        totalQueries: 0,
+        averageResponseTime: 0,
+      },
+
+      // Configuration
+      config: {
+        defaultModel: "gpt-3.5-turbo",
+        defaultEmbeddingModel: "text-embedding-3-small",
+        maxTokens: 500,
+        temperature: 0.7,
+        timeout: 60000, // 60 seconds
+        chunkSize: 1000,
+        chunkOverlap: 200,
+        topK: 5,
+      },
+    });
+
+    await service.save();
+    console.log("✅ AI Chatbot Builder service created successfully");
+    return service;
+  } catch (error) {
+    console.error("❌ Error creating AI Chatbot Builder service:", error);
+    throw error;
+  }
+};

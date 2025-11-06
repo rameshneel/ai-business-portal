@@ -6,7 +6,7 @@ const subscriptionPlanSchema = new mongoose.Schema(
     name: {
       type: String,
       required: [true, "Plan name is required"],
-      unique: true,
+      unique: true, // This creates an index automatically
       trim: true,
     },
 
@@ -78,7 +78,6 @@ const subscriptionPlanSchema = new mongoose.Schema(
       analytics: { type: Boolean, default: false },
     },
 
-
     // Stripe Integration
     stripe: {
       priceIdMonthly: { type: String, trim: true },
@@ -119,7 +118,7 @@ const subscriptionPlanSchema = new mongoose.Schema(
 );
 
 // Indexes for performance
-subscriptionPlanSchema.index({ name: 1 });
+// Note: name index is created automatically by unique: true, so we don't need to add it again
 subscriptionPlanSchema.index({ type: 1 });
 subscriptionPlanSchema.index({ status: 1 });
 subscriptionPlanSchema.index({ displayOrder: 1 });

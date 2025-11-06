@@ -5,6 +5,7 @@ import socketRoutes from "./socket.routes.js";
 import subscriptionRoutes from "./subscription.routes.js";
 import paymentRoutes from "./payment.routes.js";
 import analyticsRoutes from "./analytics.routes.js";
+import chatbotRoutes from "./chatbot.routes.js";
 
 const router = express.Router();
 
@@ -15,5 +16,6 @@ router.use("/socket", socketRoutes);
 router.use("/subscription", subscriptionRoutes);
 router.use("/payment", paymentRoutes);
 router.use("/analytics", analyticsRoutes);
+router.use("/chatbot", chatbotRoutes);
 
 export default router;

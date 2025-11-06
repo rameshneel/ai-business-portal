@@ -1,8 +1,8 @@
 {
   "info": {
-    "name": "AI Business Portal API - Phase 1, 2 & 2.5",
-    "description": "Complete API testing collection for AI Business Portal with Auth, AI Text Writer, Socket.IO, Subscription, Payment, and Analytics",
-    "version": "3.0.0",
+    "name": "AI Business Portal API - Phase 1, 2, 2.5 & 3.2",
+    "description": "Complete API testing collection for AI Business Portal with Auth, AI Text Writer, Socket.IO, Subscription, Payment, Analytics, and AI Chatbot Builder. Includes: Collection Management, Document Updates, Chatbot Configuration Updates, Widget Settings, Ollama Integration Support, and Enhanced RAG Query Responses.",
+    "version": "4.2.0",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -23,6 +23,16 @@
     },
     {
       "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "chatbotId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "widgetApiKey",
       "value": "",
       "type": "string"
     }
@@ -971,6 +981,546 @@
       ]
     },
     {
+      "name": "AI Chatbot Builder (Phase 3.2)",
+      "item": [
+        {
+          "name": "Get Chatbot Templates",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "templates"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All ChromaDB Collections (Admin/Debug)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/collections",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "collections"]
+            },
+            "description": "Get all ChromaDB collections. Useful for debugging and admin purposes."
+          },
+          "response": []
+        },
+        {
+          "name": "Get ChromaDB Collection Details (Admin/Debug)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/collections/:collectionName",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "collections", ":collectionName"],
+              "variable": [
+                {
+                  "key": "collectionName",
+                  "value": "chatbot-collection-id-here",
+                  "description": "Collection name/ID from ChromaDB"
+                }
+              ]
+            },
+            "description": "Get detailed information about a specific ChromaDB collection including sample data."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Chatbot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.chatbot && response.data.chatbot._id) {",
+                  "        pm.collectionVariables.set('chatbotId', response.data.chatbot._id);",
+                  "        if (response.data.chatbot.widget && response.data.chatbot.widget.apiKey) {",
+                  "            pm.collectionVariables.set('widgetApiKey', response.data.chatbot.widget.apiKey);",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My Support Bot\",\n  \"description\": \"Customer support chatbot for my website\",\n  \"template\": \"customerSupport\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get All Chatbots",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot?page=1&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Single Chatbot",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.chatbot && response.data.chatbot._id) {",
+                  "        pm.collectionVariables.set('chatbotId', response.data.chatbot._id);",
+                  "        if (response.data.chatbot.widget && response.data.chatbot.widget.apiKey) {",
+                  "            pm.collectionVariables.set('widgetApiKey', response.data.chatbot.widget.apiKey);",
+                  "        }",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Chatbot Configuration",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Support Bot\",\n  \"description\": \"Updated description for my chatbot\",\n  \"config\": {\n    \"systemPrompt\": \"You are a helpful customer support assistant. Answer questions politely and professionally.\",\n    \"temperature\": 0.8,\n    \"maxTokens\": 750,\n    \"topK\": 7,\n    \"chunkSize\": 1500,\n    \"chunkOverlap\": 250\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}"]
+            },
+            "description": "Update chatbot name, description, or configuration. All fields are optional."
+          },
+          "response": []
+        },
+        {
+          "name": "Train Chatbot with File (PDF/TXT)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": [],
+                  "description": "Upload PDF or TXT file (max 10MB)"
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/train/file",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "train", "file"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Train Chatbot with Text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Your company offers AI-powered business solutions. You provide text generation, image generation, and chatbot services. Your support team is available 24/7. Contact us at support@example.com for assistance.\"\n}",
+              "description": "Text content to train the chatbot (max 1MB). Text will be chunked and embedded for RAG. Supports batch processing for better performance."
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/train/text",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "train", "text"]
+            },
+            "description": "Train chatbot with plain text. Text is automatically chunked and embedded. Works with both OpenAI and Ollama embeddings. Supports concurrent training prevention (will fail if chatbot is already training)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Chatbot Documents (Collection)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/documents?limit=50&offset=0&search=",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "documents"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "description": "Number of documents to return (default: 50, max: 200)"
+                },
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "Number of documents to skip (default: 0)"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional: Search term to filter documents",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get all documents in chatbot's collection with pagination and optional search."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Document in Collection",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Updated document content here. This will replace the existing document text and regenerate embeddings.\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/documents/:documentId",
+              "host": ["{{baseUrl}}"],
+              "path": [
+                "chatbot",
+                "{{chatbotId}}",
+                "documents",
+                ":documentId"
+              ],
+              "variable": [
+                {
+                  "key": "documentId",
+                  "value": "chatbot-xxx-chunk-123-0",
+                  "description": "Document ID from collection (get from Get Chatbot Documents endpoint)"
+                }
+              ]
+            },
+            "description": "Update a specific document in the chatbot's collection. The document ID can be obtained from the Get Chatbot Documents endpoint."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Documents from Collection",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documentIds\": [\n    \"chatbot-xxx-chunk-123-0\",\n    \"chatbot-xxx-chunk-123-1\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/documents",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "documents"]
+            },
+            "description": "Delete multiple documents from chatbot's collection. Maximum 100 documents per request."
+          },
+          "response": []
+        },
+        {
+          "name": "Query Chatbot",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"What services do you offer?\",\n  \"sessionId\": \"session-123\"\n}",
+              "description": "Query can be in any language (English, Hindi, etc.). Response will be direct answer without 'Question:' or 'Answer:' format labels."
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "query"]
+            },
+            "description": "Query chatbot with RAG (Retrieval Augmented Generation). Supports both OpenAI and Ollama providers. Works for chatbots in 'active' or 'training' status. Responses are cleaned and formatted - direct answers without 'Question:' or 'Answer:' labels. Supports multilingual queries (English, Hindi, etc.)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Conversation History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/conversations?sessionId=session-123&page=1&limit=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "conversations"],
+              "query": [
+                {
+                  "key": "sessionId",
+                  "value": "session-123",
+                  "description": "Optional: Filter by session ID"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Widget Code",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.widget && response.data.widget.apiKey) {",
+                  "        pm.collectionVariables.set('widgetApiKey', response.data.widget.apiKey);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/widget",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "widget"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Widget Settings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.widget && response.data.widget.apiKey) {",
+                  "        pm.collectionVariables.set('widgetApiKey', response.data.widget.apiKey);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true,\n  \"regenerateApiKey\": false,\n  \"theme\": {\n    \"primaryColor\": \"#007bff\",\n    \"backgroundColor\": \"#ffffff\",\n    \"position\": \"bottom-right\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/widget",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "widget"]
+            },
+            "description": "Update widget settings: enable/disable, regenerate API key, or customize theme. Set regenerateApiKey to true to generate a new API key."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Chatbot",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Widget Query (Public - No Auth)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Hello, how can you help me?\",\n  \"apiKey\": \"{{widgetApiKey}}\",\n  \"sessionId\": \"widget-session-123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/widget/{{chatbotId}}/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "widget", "{{chatbotId}}", "query"]
+            },
+            "description": "Public endpoint for widget queries. Requires widget API key (not JWT token). Works for chatbots in 'active' or 'training' status. Responses are cleaned and formatted without 'Question:' or 'Answer:' labels."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
       "name": "Error Testing",
       "item": [
         {
@@ -1048,6 +1598,153 @@
               "host": ["{{baseUrl}}"],
               "path": ["services", "text", "generate"]
             }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - Create Chatbot (Missing Name)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Test chatbot\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - Invalid Chatbot ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/invalid-id-123",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "invalid-id-123"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - Widget Query (Missing API Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Hello\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/widget/{{chatbotId}}/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "widget", "{{chatbotId}}", "query"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - Update Chatbot (Invalid Config)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config\": {\n    \"temperature\": 5.0,\n    \"maxTokens\": 5000,\n    \"topK\": 50\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}"]
+            },
+            "description": "Test validation: temperature > 2, maxTokens > 4000, topK > 20"
+          },
+          "response": []
+        },
+        {
+          "name": "Validation Error - Update Widget (Invalid Color)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": {\n    \"primaryColor\": \"invalid-color\",\n    \"position\": \"invalid-position\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/widget",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "widget"]
+            },
+            "description": "Test validation: invalid hex color and invalid position"
+          },
+          "response": []
+        },
+        {
+          "name": "Rate Limit Test - Multiple Chatbot Queries",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Test query for rate limiting\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/chatbot/{{chatbotId}}/query",
+              "host": ["{{baseUrl}}"],
+              "path": ["chatbot", "{{chatbotId}}", "query"]
+            },
+            "description": "Send multiple requests quickly to test rate limiting (Free Plan: 10 queries/hour)"
           },
           "response": []
         }
