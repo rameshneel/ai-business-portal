@@ -69,43 +69,15 @@ const userSchema = new mongoose.Schema(
       select: false, // Don't include in queries by default
     },
 
-    // Subscription Information
-    subscription: {
-      type: {
-        type: String,
-        enum: ["free", "premium", "enterprise"],
-        default: "free",
-      },
-      startDate: Date,
-      endDate: Date,
-      stripeCustomerId: String,
-      stripeSubscriptionId: String,
+    // Stripe Customer ID (for quick access, actual subscription data in Subscription model)
+    stripeCustomerId: {
+      type: String,
+      index: true,
     },
 
-    // Usage Tracking
-    usageStats: {
-      totalApiCalls: {
-        type: Number,
-        default: 0,
-      },
-      textGenerationCalls: {
-        type: Number,
-        default: 0,
-      },
-      imageGenerationCalls: {
-        type: Number,
-        default: 0,
-      },
-      chatbotCalls: {
-        type: Number,
-        default: 0,
-      },
-      searchCalls: {
-        type: Number,
-        default: 0,
-      },
-      lastUsed: Date,
-    },
+    // Note: Subscription data is stored in Subscription model (subscription.model.js)
+    // Note: Usage stats are stored in ServiceUsage model (serviceUsage.model.js)
+    // This prevents data duplication and sync issues
   },
   {
     timestamps: true,

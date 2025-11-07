@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import logger from "../../../../../utils/logger.js";
 import { getOllamaEmbeddings } from "./ollamaClient.js";
+import { generateEmbeddings as generateEmbeddingsFastAPI } from "../clients/embeddingClient.js";
 
 // Get provider dynamically (not at module load time)
 const getEmbeddingProvider = () => {
@@ -31,6 +32,16 @@ export const generateEmbeddings = async (
 ) => {
   // Get provider dynamically (check at runtime, not module load time)
   const EMBEDDING_PROVIDER = getEmbeddingProvider();
+
+  // Use FastAPI embedding service if provider is set to fastapi
+  if (EMBEDDING_PROVIDER === "fastapi") {
+    logger.debug("Using FastAPI embedding service");
+    // FastAPI service will handle model name mapping internally
+    // We can pass OpenAI model names directly, and FastAPI will map them
+    // Or pass null/undefined to use default model
+    const fastapiModel = model || undefined; // Let FastAPI handle mapping
+    return await generateEmbeddingsFastAPI(text, fastapiModel);
+  }
 
   // Use Ollama if provider is set to ollama
   if (EMBEDDING_PROVIDER === "ollama") {

@@ -1,4 +1,5 @@
 import Service from "../../../models/service.model.js";
+import logger from "../../../utils/logger.js";
 
 // Initialize AI Text Writer Service in Database
 export const initializeAITextWriterService = async () => {
@@ -6,7 +7,7 @@ export const initializeAITextWriterService = async () => {
     // Check if service already exists
     const existingService = await Service.findOne({ type: "ai_text_writer" });
     if (existingService) {
-      console.log("✅ AI Text Writer service already exists");
+      logger.info("✅ AI Text Writer service already exists");
       return existingService;
     }
 
@@ -84,10 +85,10 @@ export const initializeAITextWriterService = async () => {
     });
 
     await service.save();
-    console.log("✅ AI Text Writer service created successfully");
+    logger.info("✅ AI Text Writer service created successfully");
     return service;
   } catch (error) {
-    console.error("❌ Error creating AI Text Writer service:", error);
+    logger.error("❌ Error creating AI Text Writer service:", error);
     throw error;
   }
 };
@@ -100,7 +101,7 @@ export const initializeAIImageGeneratorService = async () => {
       type: "ai_image_generator",
     });
     if (existingService) {
-      console.log("✅ AI Image Generator service already exists");
+      logger.info("✅ AI Image Generator service already exists");
       return existingService;
     }
 
@@ -177,10 +178,10 @@ export const initializeAIImageGeneratorService = async () => {
     });
 
     await service.save();
-    console.log("✅ AI Image Generator service created successfully");
+    logger.info("✅ AI Image Generator service created successfully");
     return service;
   } catch (error) {
-    console.error("❌ Error creating AI Image Generator service:", error);
+    logger.error("❌ Error creating AI Image Generator service:", error);
     throw error;
   }
 };
@@ -193,7 +194,7 @@ export const initializeAIChatbotBuilderService = async () => {
       type: "ai_chatbot_builder",
     });
     if (existingService) {
-      console.log("✅ AI Chatbot Builder service already exists");
+      logger.info("✅ AI Chatbot Builder service already exists");
       return existingService;
     }
 
@@ -276,10 +277,10 @@ export const initializeAIChatbotBuilderService = async () => {
     });
 
     await service.save();
-    console.log("✅ AI Chatbot Builder service created successfully");
+    logger.info("✅ AI Chatbot Builder service created successfully");
     return service;
   } catch (error) {
-    console.error("❌ Error creating AI Chatbot Builder service:", error);
+    logger.error("❌ Error creating AI Chatbot Builder service:", error);
     throw error;
   }
 };

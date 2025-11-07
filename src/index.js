@@ -1,7 +1,5 @@
-import dotenv from "dotenv";
-
-// Load environment variables FIRST
-dotenv.config();
+// Load and validate environment variables FIRST
+import "./config/env.js";
 
 // Setup PDF polyfills early (before any module imports pdf-parse)
 import "./utils/pdfPolyfill.js";
@@ -9,6 +7,7 @@ import "./utils/pdfPolyfill.js";
 import { createServer } from "http";
 import app from "./app.js";
 import connectDB from "./config/database.js";
+import logger from "./utils/logger.js";
 import { initializeSocketIO } from "./services/communication/socketIOService.js";
 import {
   initializeAITextWriterService,
@@ -25,15 +24,22 @@ const EMBEDDING_PROVIDER = process.env.EMBEDDING_PROVIDER || "openai";
 const CHAT_PROVIDER =
   process.env.CHAT_PROVIDER || process.env.EMBEDDING_PROVIDER || "openai";
 
-console.log("🤖 AI Provider Configuration:");
-console.log(`   Embeddings: ${EMBEDDING_PROVIDER.toUpperCase()}`);
-console.log(`   Chat: ${CHAT_PROVIDER.toUpperCase()}`);
+logger.info("🤖 AI Provider Configuration:");
+logger.info(`   Embeddings: ${EMBEDDING_PROVIDER.toUpperCase()}`);
+logger.info(`   Chat: ${CHAT_PROVIDER.toUpperCase()}`);
 
 if (EMBEDDING_PROVIDER === "ollama" || CHAT_PROVIDER === "ollama") {
   const OLLAMA_BASE_URL =
     process.env.OLLAMA_BASE_URL || "http://localhost:11434";
-  console.log(`   Ollama URL: ${OLLAMA_BASE_URL}`);
-  console.log("   ⚠️  Make sure Ollama is running: ollama serve");
+  logger.info(`   Ollama URL: ${OLLAMA_BASE_URL}`);
+  logger.warn("   ⚠️  Make sure Ollama is running: ollama serve");
+}
+
+if (EMBEDDING_PROVIDER === "fastapi") {
+  const EMBEDDING_API_URL =
+    process.env.EMBEDDING_API_URL || "http://localhost:8001";
+  logger.info(`   FastAPI Embedding Service URL: ${EMBEDDING_API_URL}`);
+  logger.warn("   ⚠️  Make sure FastAPI embedding service is running");
 }
 
 // Create HTTP server
@@ -61,25 +67,25 @@ const startServer = async () => {
 
     // Start server
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV}`);
-      console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-      console.log(
+      logger.info(`🚀 Server running on port ${PORT}`);
+      logger.info(`🌍 Environment: ${process.env.NODE_ENV}`);
+      logger.info(`🏥 Health check: http://localhost:${PORT}/health`);
+      logger.info(
         `📝 AI Text Writer: http://localhost:${PORT}/api/services/text/generate`
       );
-      console.log(
+      logger.info(
         `🎨 AI Image Generator: http://localhost:${PORT}/api/services/image/generate`
       );
-      console.log(
+      logger.info(
         `🤖 AI Chatbot Builder: http://localhost:${PORT}/api/chatbot`
       );
-      console.log(`🔌 Socket.IO: ws://localhost:${PORT}`);
-      console.log(
+      logger.info(`🔌 Socket.IO: ws://localhost:${PORT}`);
+      logger.info(
         `👥 Connected users: ${socketService.getConnectedUsersCount()}`
       );
     });
   } catch (error) {
-    console.error("❌ Failed to start server:", error);
+    logger.error("❌ Failed to start server:", error);
     process.exit(1);
   }
 };

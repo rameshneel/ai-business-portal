@@ -126,11 +126,15 @@ export class SubscriptionAnalyticsService {
   // Get user engagement metrics
   async getUserEngagementMetrics() {
     const totalUsers = await User.countDocuments();
-    const activeUsers = await User.countDocuments({
-      "usageStats.lastUsed": {
-        $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+
+    // Get active users from ServiceUsage (users who used services in last 30 days)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const activeUserIds = await ServiceUsage.distinct("userId", {
+      "request.timestamp": {
+        $gte: thirtyDaysAgo,
       },
     });
+    const activeUsers = activeUserIds.length;
 
     const subscriptionUsers = await Subscription.countDocuments({
       status: "active",

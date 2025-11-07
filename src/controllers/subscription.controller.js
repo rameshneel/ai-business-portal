@@ -11,6 +11,7 @@ import {
   createSubscriptionData,
   calculatePeriodEnd,
 } from "../utils/subscriptionUtils.js";
+import logger from "../utils/logger.js";
 
 // ========================================
 // SUBSCRIPTION MANAGEMENT
@@ -52,7 +53,7 @@ export const getCurrentSubscription = asyncHandler(async (req, res) => {
 
   // Auto-create free subscription if user doesn't have one
   if (!subscription) {
-    console.log(
+    logger.info(
       "🆕 No subscription found in getCurrentSubscription, creating free plan for user:",
       userId
     );
@@ -98,7 +99,7 @@ export const getCurrentSubscription = asyncHandler(async (req, res) => {
       "name displayName type features price"
     );
 
-    console.log(
+    logger.info(
       "✅ Free subscription created in getCurrentSubscription for user:",
       userId
     );
@@ -142,21 +143,45 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Plan ID is required");
   }
 
-  // Get the plan
-  const plan = await SubscriptionPlan.findById(planId);
+  // Try to find plan by ID first, if that fails, try by type
+  let plan = null;
+  const mongoose = (await import("mongoose")).default;
+
+  // Check if planId is a valid MongoDB ObjectId
+  if (mongoose.Types.ObjectId.isValid(planId)) {
+    plan = await SubscriptionPlan.findById(planId);
+  }
+
+  // If not found by ID, try to find by type (e.g., "basic", "pro", etc.)
   if (!plan) {
-    throw new ApiError(404, "Subscription plan not found");
+    plan = await SubscriptionPlan.findOne({
+      type: planId,
+      status: "active",
+    });
+  }
+
+  if (!plan) {
+    throw new ApiError(404, `Subscription plan not found: ${planId}`);
   }
 
   if (plan.type === "free") {
     throw new ApiError(400, "Cannot upgrade to free plan");
   }
 
-  // Check if user has an active subscription
+  // Check if user has an existing subscription
   const existingSubscription = await Subscription.findOne({ userId });
 
-  if (existingSubscription && existingSubscription.isActive()) {
-    throw new ApiError(400, "User already has an active subscription");
+  // If user has an active subscription with the same plan and billing cycle, inform them
+  if (
+    existingSubscription &&
+    existingSubscription.isActive() &&
+    existingSubscription.planId?.toString() === plan._id.toString() &&
+    existingSubscription.billingCycle === billingCycle
+  ) {
+    throw new ApiError(
+      400,
+      "You already have an active subscription to this plan with the same billing cycle"
+    );
   }
 
   // Calculate pricing and period
@@ -168,7 +193,10 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
   // Create or update subscription
   let subscription;
   if (existingSubscription) {
-    // Update existing subscription
+    // Update existing subscription (upgrade/downgrade/change billing cycle)
+    // Preserve usage data if upgrading (don't reset usage)
+    const preserveUsage = existingSubscription.usage || createDefaultUsage();
+
     subscription = await Subscription.findByIdAndUpdate(
       existingSubscription._id,
       {
@@ -183,7 +211,7 @@ export const upgradeSubscription = asyncHandler(async (req, res) => {
         currency: currency,
         limits: plan.features,
         features: plan.features,
-        usage: createDefaultUsage(),
+        usage: preserveUsage, // Preserve existing usage data
       },
       { new: true }
     );
@@ -288,7 +316,7 @@ export const getSubscriptionUsage = asyncHandler(async (req, res) => {
 
   // Auto-create free subscription if user doesn't have one
   if (!subscription) {
-    console.log(
+    logger.info(
       "🆕 No subscription found, creating free plan for user:",
       userId
     );
@@ -324,7 +352,7 @@ export const getSubscriptionUsage = asyncHandler(async (req, res) => {
       "name displayName features"
     );
 
-    console.log("✅ Free subscription created for user:", userId);
+    logger.info("✅ Free subscription created for user:", userId);
   }
 
   const plan = subscription.planId;

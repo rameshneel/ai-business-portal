@@ -14,8 +14,8 @@ export const validateCreateChatbot = [
   body("description")
     .optional()
     .trim()
-    .isLength({ max: 500 })
-    .withMessage("Description cannot exceed 500 characters"),
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
 
   body("config.systemPrompt")
     .optional()
@@ -50,10 +50,33 @@ export const validateCreateChatbot = [
 
   body("template")
     .optional()
-    .isIn(["customerSupport", "generalAssistant", "faqAssistant"])
-    .withMessage(
-      "Invalid template name. Must be one of: customerSupport, generalAssistant, faqAssistant"
-    ),
+    .trim()
+    .custom((value) => {
+      if (!value) return true; // Optional field
+      const normalizedValue = value.toLowerCase();
+      const validTemplates = [
+        "customersupport",
+        "generalassistant",
+        "faqassistant",
+      ];
+      if (validTemplates.includes(normalizedValue)) {
+        return true;
+      }
+      throw new Error(
+        "Invalid template name. Must be one of: customerSupport, generalAssistant, faqAssistant (case-insensitive)"
+      );
+    })
+    .customSanitizer((value) => {
+      // Normalize to camelCase for consistency
+      if (!value) return value;
+      const normalized = value.toLowerCase();
+      const templateMap = {
+        customersupport: "customerSupport",
+        generalassistant: "generalAssistant",
+        faqassistant: "faqAssistant",
+      };
+      return templateMap[normalized] || value;
+    }),
 ];
 
 /**
@@ -148,8 +171,8 @@ export const validateUpdateChatbot = [
   body("description")
     .optional()
     .trim()
-    .isLength({ max: 500 })
-    .withMessage("Description cannot exceed 500 characters"),
+    .isLength({ max: 1000 })
+    .withMessage("Description cannot exceed 1000 characters"),
 
   body("config.systemPrompt")
     .optional()

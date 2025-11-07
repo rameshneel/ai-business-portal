@@ -5,6 +5,7 @@ import morgan from "morgan";
 import compression from "compression";
 import rateLimit from "express-rate-limit";
 import cookieParser from "cookie-parser";
+import timeout from "connect-timeout";
 
 // Import routes
 import apiRoutes from "./routes/index.js";
@@ -12,6 +13,7 @@ import apiRoutes from "./routes/index.js";
 // Import middleware
 import errorHandler from "./middleware/errorHandler.middleware.js";
 import { socketIOMiddleware } from "./middleware/socketIO.middleware.js";
+import logger from "./utils/logger.js";
 
 const app = express();
 
@@ -71,9 +73,9 @@ if (process.env.NODE_ENV === "production") {
     message: "Too many requests from this IP, please try again later.",
   });
   app.use(limiter);
-  console.log("✅ Rate limiting enabled (Production mode)");
+  logger.info("✅ Rate limiting enabled (Production mode)");
 } else {
-  console.log("⚠️ Rate limiting disabled (Development mode)");
+  logger.warn("⚠️ Rate limiting disabled (Development mode)");
 }
 
 // Logging
@@ -83,7 +85,34 @@ if (process.env.NODE_ENV === "production") {
 //   app.use(morgan("combined"));
 // }
 
-// Body parsing middleware
+// Stripe webhook ke liye raw body middleware (BEFORE express.json())
+// Stripe signature verification ke liye raw body buffer chahiye
+app.use(
+  "/api/payment/webhook",
+  express.raw({ type: "application/json" }),
+  (req, res, next) => {
+    // Store raw body for webhook signature verification
+    req.rawBody = req.body;
+    next();
+  }
+);
+
+// Request timeout middleware (30 seconds)
+// app.use(timeout("30s"));
+
+// Timeout handler
+app.use((req, res, next) => {
+  if (!req.timedout) next();
+  else {
+    logger.warn(`Request timeout: ${req.method} ${req.path}`);
+    res.status(408).json({
+      success: false,
+      message: "Request timeout. Please try again.",
+    });
+  }
+});
+
+// Body parsing middleware (baaki routes ke liye)
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 

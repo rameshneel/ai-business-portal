@@ -26,6 +26,11 @@ CHROMADB_URL=http://localhost:8000
 
 # Optional: OpenAI (for production)
 # OPENAI_API_KEY=your-openai-api-key
+
+# Stripe Payment Integration (Optional - for subscription features)
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=whsec_...
+# STRIPE_PUBLISHABLE_KEY=pk_test_...
 ```
 
 ## Steps:

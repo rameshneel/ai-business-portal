@@ -4,6 +4,7 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import User from "../models/user.model.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import logger from "../utils/logger.js";
 
 // Generate Access and Refresh Token
 const generateAccessAndRefreshTokens = async (userId) => {
@@ -37,7 +38,7 @@ const generateAccessAndRefreshTokens = async (userId) => {
 
     return { accessToken, refreshToken };
   } catch (error) {
-    console.error("Token generation error:", error);
+    logger.error("Token generation error:", error);
     throw new ApiError(500, `Token generation failed: ${error.message}`);
   }
 };
@@ -219,9 +220,43 @@ export const refreshAccessToken = asyncHandler(async (req, res) => {
 
 // Get Current User
 export const getCurrentUser = asyncHandler(async (req, res) => {
+  const userId = req.user._id;
+
+  // Get user's subscription to include in response
+  const Subscription = (await import("../models/subscription.model.js"))
+    .default;
+  const subscription = await Subscription.findOne({ userId })
+    .populate("planId", "name displayName type features price")
+    .sort({ createdAt: -1 });
+
+  // Prepare user object with subscription data
+  const userData = req.user.toObject();
+
+  // Add subscription data to user object for frontend convenience
+  if (subscription) {
+    userData.subscription = {
+      type: subscription.plan, // "free", "basic", "pro", "enterprise"
+      id: subscription._id,
+      status: subscription.status,
+      billingCycle: subscription.billingCycle,
+      currentPeriodEnd: subscription.currentPeriodEnd,
+      isActive: subscription.isActive(),
+      planDetails: subscription.planId,
+    };
+  } else {
+    // Default to free if no subscription found
+    userData.subscription = {
+      type: "free",
+      status: "active",
+      isActive: true,
+    };
+  }
+
   return res
     .status(200)
-    .json(new ApiResponse(200, req.user, "User fetched successfully"));
+    .json(
+      new ApiResponse(200, { user: userData }, "User fetched successfully")
+    );
 });
 
 // Update User Profile

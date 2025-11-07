@@ -12,6 +12,7 @@ import {
   getWidgetCode,
   updateChatbotWidgetHandler,
   widgetQuery,
+  getWidgetInfo,
   getChatbotTemplates,
   getChromaCollections,
   getChromaCollection,
@@ -208,6 +209,9 @@ router.get(
 // ========================================
 // WIDGET ROUTES (Public - for external websites)
 // ========================================
+
+// Widget info endpoint (public, requires API key)
+router.get("/widget/:id/info", validateChatbotId, getWidgetInfo);
 
 // Widget query endpoint (public, requires API key)
 router.post(

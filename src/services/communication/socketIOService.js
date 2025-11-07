@@ -1,6 +1,7 @@
 import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import User from "../../models/user.model.js";
+import logger from "../../utils/logger.js";
 
 // Socket.IO Service Class
 export class SocketIOService {
@@ -46,18 +47,33 @@ export class SocketIOService {
           return next(new Error("Authentication token required"));
         }
 
-        const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-        const user = await User.findById(decoded._id).select(
-          "-password -refreshToken"
-        );
+        try {
+          const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
+          const user = await User.findById(decoded._id).select(
+            "-password -refreshToken"
+          );
 
-        if (!user) {
-          return next(new Error("User not found"));
+          if (!user) {
+            return next(new Error("User not found"));
+          }
+
+          socket.userId = user._id;
+          socket.user = user;
+          next();
+        } catch (jwtError) {
+          // Provide more specific error messages
+          if (jwtError.name === "TokenExpiredError") {
+            return next(
+              new Error(
+                "Access token expired. Please refresh your token and reconnect."
+              )
+            );
+          } else if (jwtError.name === "JsonWebTokenError") {
+            return next(new Error("Invalid authentication token"));
+          } else {
+            return next(new Error("Authentication failed"));
+          }
         }
-
-        socket.userId = user._id;
-        socket.user = user;
-        next();
       } catch (error) {
         next(new Error("Invalid authentication token"));
       }
@@ -67,7 +83,7 @@ export class SocketIOService {
   // Initialize event handlers
   initializeEventHandlers() {
     this.io.on("connection", (socket) => {
-      console.log(`🔌 User connected: ${socket.user.email} (${socket.id})`);
+      logger.info(`🔌 User connected: ${socket.user.email} (${socket.id})`);
 
       // Store user connection
       this.connectedUsers.set(socket.userId, socket.id);
@@ -121,7 +137,7 @@ export class SocketIOService {
 
       // Handle disconnection
       socket.on("disconnect", (reason) => {
-        console.log(
+        logger.info(
           `🔌 User disconnected: ${socket.user.email} (${socket.id}) - ${reason}`
         );
 
@@ -136,9 +152,12 @@ export class SocketIOService {
         });
       });
 
+      // Handle token refresh (for when access token is refreshed via API)
+      this.handleTokenRefresh(socket);
+
       // Handle errors
       socket.on("error", (error) => {
-        console.error(`Socket error for user ${socket.userId}:`, error);
+        logger.error(`Socket error for user ${socket.userId}:`, error);
         socket.emit("error", {
           message: "An error occurred",
           error: error.message,
@@ -147,11 +166,110 @@ export class SocketIOService {
     });
   }
 
+  // Handle token refresh for existing connections
+  // This allows updating the Socket.IO connection with a new access token
+  // after refreshing via /api/auth/tokens/refresh endpoint
+  // Frontend should emit: socket.emit("refresh_token", { accessToken: newToken })
+  // Backend will emit: "token_refreshed" on success or "token_refresh_error" on failure
+  handleTokenRefresh(socket) {
+    socket.on("refresh_token", async (data) => {
+      try {
+        const { accessToken } = data;
+
+        if (!accessToken) {
+          socket.emit("token_refresh_error", {
+            message: "Access token is required",
+            timestamp: new Date(),
+          });
+          return;
+        }
+
+        // Verify the new token
+        try {
+          const decoded = jwt.verify(
+            accessToken,
+            process.env.ACCESS_TOKEN_SECRET
+          );
+          const user = await User.findById(decoded._id).select(
+            "-password -refreshToken"
+          );
+
+          if (!user) {
+            socket.emit("token_refresh_error", {
+              message: "User not found",
+              timestamp: new Date(),
+            });
+            return;
+          }
+
+          // Update socket authentication
+          const oldUserId = socket.userId;
+          socket.userId = user._id;
+          socket.user = user;
+
+          // Update connected users map if userId changed
+          if (oldUserId && oldUserId.toString() !== user._id.toString()) {
+            this.connectedUsers.delete(oldUserId);
+          }
+          this.connectedUsers.set(user._id, socket.id);
+
+          // Update user sockets map
+          this.userSockets.set(socket.id, {
+            userId: user._id,
+            user: user,
+            connectedAt: new Date(),
+          });
+
+          // Leave old rooms and join new ones
+          if (oldUserId) {
+            socket.leave(`user:${oldUserId}`);
+          }
+          // Leave old role room if socket.user exists
+          if (socket.user?.role) {
+            socket.leave(`role:${socket.user.role}`);
+          }
+          socket.join(`user:${user._id}`);
+          socket.join(`role:${user.role}`);
+
+          logger.info(
+            `🔄 Token refreshed for socket ${socket.id} (User: ${user.email})`
+          );
+
+          // Emit success event
+          socket.emit("token_refreshed", {
+            message: "Token refreshed successfully",
+            userId: user._id,
+            timestamp: new Date(),
+          });
+        } catch (jwtError) {
+          logger.warn(
+            `Token refresh failed for socket ${socket.id}: ${jwtError.message}`
+          );
+          socket.emit("token_refresh_error", {
+            message:
+              jwtError.name === "TokenExpiredError"
+                ? "Token expired. Please refresh again."
+                : "Invalid access token",
+            error: jwtError.message,
+            timestamp: new Date(),
+          });
+        }
+      } catch (error) {
+        logger.error(`Error handling token refresh: ${error.message}`);
+        socket.emit("token_refresh_error", {
+          message: "Failed to refresh token",
+          error: error.message,
+          timestamp: new Date(),
+        });
+      }
+    });
+  }
+
   // Handle AI service events
   handleAIServiceEvents(socket) {
     // AI Text Generation Request via Socket.IO
     socket.on("generate_text", async (data) => {
-      console.log(`📝 AI Text generation requested by user ${socket.userId}`);
+      logger.info(`📝 AI Text generation requested by user ${socket.userId}`);
 
       const { prompt, contentType, tone, length, language } = data;
 
@@ -216,11 +334,11 @@ export class SocketIOService {
           timestamp: new Date(),
         });
 
-        console.log(
+        logger.info(
           `✅ AI Text generation completed for user ${socket.userId}`
         );
       } catch (error) {
-        console.error("Text generation error:", error);
+        logger.error("Text generation error:", error);
         socket.emit("text_generation_error", {
           error: error.message,
           timestamp: new Date(),
@@ -230,7 +348,7 @@ export class SocketIOService {
 
     // AI Text Generation Progress
     socket.on("ai_text_generation_start", (data) => {
-      console.log(`📝 AI Text generation started for user ${socket.userId}`);
+      logger.info(`📝 AI Text generation started for user ${socket.userId}`);
       socket.emit("ai_text_generation_progress", {
         status: "started",
         contentType: data.contentType,
@@ -240,7 +358,7 @@ export class SocketIOService {
 
     // AI Image Generation Progress
     socket.on("ai_image_generation_start", (data) => {
-      console.log(`🎨 AI Image generation started for user ${socket.userId}`);
+      logger.info(`🎨 AI Image generation started for user ${socket.userId}`);
       socket.emit("ai_image_generation_progress", {
         status: "started",
         prompt: data.prompt,
@@ -250,7 +368,7 @@ export class SocketIOService {
 
     // AI Service Completion
     socket.on("ai_service_complete", (data) => {
-      console.log(`✅ AI Service completed for user ${socket.userId}`);
+      logger.info(`✅ AI Service completed for user ${socket.userId}`);
       socket.emit("ai_service_result", {
         service: data.service,
         result: data.result,
@@ -263,7 +381,7 @@ export class SocketIOService {
   handleSubscriptionEvents(socket) {
     // Subscription status request
     socket.on("subscription_status_request", () => {
-      console.log(`💳 Subscription status requested by ${socket.userId}`);
+      logger.info(`💳 Subscription status requested by ${socket.userId}`);
       socket.emit("subscription_status_requested", {
         userId: socket.userId,
         timestamp: new Date(),
@@ -272,7 +390,7 @@ export class SocketIOService {
 
     // Usage limit check
     socket.on("usage_limit_check", (data) => {
-      console.log(`📊 Usage limit check requested by ${socket.userId}:`, data);
+      logger.info(`📊 Usage limit check requested by ${socket.userId}:`, data);
       socket.emit("usage_limit_check_requested", {
         service: data.service,
         userId: socket.userId,
@@ -282,7 +400,7 @@ export class SocketIOService {
 
     // Upgrade prompt acknowledgment
     socket.on("upgrade_prompt_acknowledged", (data) => {
-      console.log(`✅ Upgrade prompt acknowledged by ${socket.userId}:`, data);
+      logger.info(`✅ Upgrade prompt acknowledged by ${socket.userId}:`, data);
       socket.emit("upgrade_prompt_acknowledged", {
         promptId: data.promptId,
         action: data.action, // 'upgrade', 'dismiss', 'remind_later'
@@ -297,7 +415,7 @@ export class SocketIOService {
     // Join chat room
     socket.on("join_chat", (chatId) => {
       socket.join(`chat:${chatId}`);
-      console.log(`💬 User ${socket.userId} joined chat ${chatId}`);
+      logger.info(`💬 User ${socket.userId} joined chat ${chatId}`);
 
       socket.emit("chat_joined", {
         chatId: chatId,
@@ -309,14 +427,14 @@ export class SocketIOService {
     // Leave chat room
     socket.on("leave_chat", (chatId) => {
       socket.leave(`chat:${chatId}`);
-      console.log(`💬 User ${socket.userId} left chat ${chatId}`);
+      logger.info(`💬 User ${socket.userId} left chat ${chatId}`);
     });
 
     // Send message
     socket.on("send_message", (data) => {
       const { chatId, message, type = "text" } = data;
 
-      console.log(`💬 Message from user ${socket.userId} in chat ${chatId}`);
+      logger.info(`💬 Message from user ${socket.userId} in chat ${chatId}`);
 
       // Broadcast message to all users in the chat
       socket.to(`chat:${chatId}`).emit("new_message", {
@@ -355,7 +473,7 @@ export class SocketIOService {
 
     // Mark notification as read
     socket.on("mark_notification_read", (notificationId) => {
-      console.log(
+      logger.info(
         `🔔 Notification ${notificationId} marked as read by user ${socket.userId}`
       );
       socket.emit("notification_read", {
@@ -370,7 +488,7 @@ export class SocketIOService {
     // Admin broadcast to all users
     socket.on("admin_broadcast", (data) => {
       if (socket.user.role === "admin") {
-        console.log(`📢 Admin broadcast from ${socket.user.email}`);
+        logger.info(`📢 Admin broadcast from ${socket.user.email}`);
         this.io.emit("admin_message", {
           message: data.message,
           type: data.type || "info",
@@ -388,7 +506,7 @@ export class SocketIOService {
     socket.on("admin_role_message", (data) => {
       if (socket.user.role === "admin") {
         const { role, message, type = "info" } = data;
-        console.log(
+        logger.info(
           `📢 Admin message to role ${role} from ${socket.user.email}`
         );
 

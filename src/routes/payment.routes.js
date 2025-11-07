@@ -1,10 +1,14 @@
 import express from "express";
 import {
   createStripeCustomer,
+  createPaymentIntentController,
+  confirmPaymentController,
   createStripeSubscription,
   handleStripeWebhook,
   getPaymentMethods,
   cancelStripeSubscription,
+  checkPaymentStatus,
+  retryPayment,
 } from "../controllers/payment.controller.js";
 import { verifyJWT } from "../middleware/auth.middleware.js";
 import { validateSubscriptionUpgrade } from "../validation/subscription.validation.js";
@@ -17,7 +21,10 @@ const router = express.Router();
 
 // Create Stripe customer
 router.post("/customer/create", verifyJWT, createStripeCustomer);
-router.post("/create-intent", verifyJWT, createStripeCustomer);
+// Create Payment Intent (for one-time payment)
+router.post("/create-intent", verifyJWT, createPaymentIntentController);
+// Confirm Payment Intent
+router.post("/confirm", verifyJWT, confirmPaymentController);
 // Create Stripe subscription
 router.post(
   "/subscription/create",
@@ -28,6 +35,12 @@ router.post(
 
 // Get payment methods
 router.get("/methods", verifyJWT, getPaymentMethods);
+
+// Check payment status
+router.get("/status/:paymentIntentId", verifyJWT, checkPaymentStatus);
+
+// Retry payment (for failed/canceled payments)
+router.post("/retry", verifyJWT, retryPayment);
 
 // Cancel Stripe subscription
 router.post("/subscription/cancel", verifyJWT, cancelStripeSubscription);

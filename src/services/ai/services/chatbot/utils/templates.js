@@ -2,8 +2,9 @@
  * Chatbot Templates - Constant for seeding/initialization
  * These templates are loaded into database on startup
  *
- * Note: Pre-training data is automatically loaded when chatbot is created with a template.
- * Pre-training data files are located in /public/training-data/{templateName}/default.txt
+ * Note: Pre-training data auto-load is DISABLED.
+ * Chatbots are created empty. Customers must manually add training data after creation.
+ * Pre-training data configuration is kept for future use but is not automatically loaded.
  */
 
 import ChatbotTemplate from "../../../../../models/chatbotTemplate.model.js";
@@ -12,7 +13,7 @@ export const CHATBOT_TEMPLATES = {
   customerSupport: {
     name: "Customer Support",
     description:
-      "Helpful customer support assistant for answering customer queries. Comes with pre-loaded FAQ and policies.",
+      "Helpful customer support assistant for answering customer queries. You'll need to add your own training data after creation.",
     systemPrompt:
       "You are a friendly and professional customer support agent. Your goal is to help customers with their questions and concerns. Always be polite, empathetic, and solution-oriented. Answer questions based on the provided context. If you don't know the answer, politely let the customer know and suggest they contact support.",
     temperature: 0.7,
@@ -41,7 +42,7 @@ export const CHATBOT_TEMPLATES = {
   generalAssistant: {
     name: "General Assistant",
     description:
-      "Versatile AI assistant for general questions and information. Comes with pre-loaded general knowledge.",
+      "Versatile AI assistant for general questions and information. You'll need to add your own training data after creation.",
     systemPrompt:
       "You are a helpful and knowledgeable AI assistant. Answer questions clearly and concisely based on the provided context. Be friendly, professional, and informative. If the context doesn't contain enough information, let the user know politely.",
     temperature: 0.7,
@@ -70,7 +71,7 @@ export const CHATBOT_TEMPLATES = {
   faqAssistant: {
     name: "FAQ Assistant",
     description:
-      "Efficient FAQ bot for quick answers to common questions. Comes with pre-loaded FAQ content.",
+      "Efficient FAQ bot for quick answers to common questions. You'll need to add your own training data after creation.",
     systemPrompt:
       "You are an FAQ assistant designed to provide quick and accurate answers to frequently asked questions. Keep responses concise and to the point. Answer based on the provided FAQ documentation. If a question isn't covered, suggest related topics or direct users to contact support.",
     temperature: 0.5,

@@ -21,6 +21,7 @@ import {
   OLLAMA_CHAT_MODEL_MAP,
   DEFAULT_OLLAMA_EMBEDDING_MODEL,
   DEFAULT_OLLAMA_CHAT_MODEL,
+  DIMENSION_TO_MODEL_MAP,
 } from "./utils/constants.js";
 import { OpenAIEmbeddingFunction } from "./utils/openaiEmbeddingFunction.js";
 import { OllamaEmbeddingFunction } from "./utils/ollamaEmbeddingFunction.js";
@@ -31,6 +32,10 @@ import {
   getTemplate,
 } from "./utils/templates.js";
 import logger from "../../../../utils/logger.js";
+import {
+  sanitizeModelId,
+  sanitizeModelMetadata,
+} from "../../../../utils/modelSanitizer.js";
 import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
@@ -439,11 +444,14 @@ export const createChatbot = async (
             },
       },
       metadata: {
-        model: finalConfig.model || config.model || "gpt-3.5-turbo",
-        embeddingModel:
+        model: sanitizeModelId(
+          finalConfig.model || config.model || "gpt-3.5-turbo"
+        ),
+        embeddingModel: sanitizeModelId(
           finalConfig.embeddingModel ||
-          config.embeddingModel ||
-          "text-embedding-3-small",
+            config.embeddingModel ||
+            "text-embedding-3-small"
+        ),
         provider: "openai",
       },
     });
@@ -484,36 +492,52 @@ export const createChatbot = async (
 
     // Set status to active after successful collection creation
     chatbot.status = "active";
+
+    // Initialize training data as empty (no pre-training data)
+    // Customer needs to manually add training data after creation
+    chatbot.trainingData = {
+      totalDocuments: 0,
+      totalChunks: 0,
+      totalSize: 0,
+      trainingStatus: "pending",
+      fileTypes: [],
+    };
+
     await chatbot.save();
 
-    // Auto-train with pre-training data if template has it
-    if (template) {
-      const templateInfo = await getTemplate(template);
-      if (
-        templateInfo?.preTrainingData?.enabled &&
-        templateInfo.preTrainingData.filePath
-      ) {
-        try {
-          // Load and train with pre-training data in background (non-blocking)
-          loadAndTrainPreTrainingData(
-            chatbot._id,
-            templateInfo.preTrainingData.filePath
-          ).catch((error) => {
-            logger.warn(
-              `Failed to load pre-training data for chatbot ${chatbot._id}:`,
-              error
-            );
-          });
-        } catch (error) {
-          logger.warn(
-            `Error setting up pre-training for chatbot ${chatbot._id}:`,
-            error
-          );
-        }
-      }
-    }
+    // NOTE: Pre-training data auto-load is DISABLED
+    // Chatbots are created empty. Customers must manually add training data.
+    // This ensures customers understand they need to train the chatbot first.
+    //
+    // If you want to enable pre-training data in the future, uncomment below:
+    // if (template) {
+    //   const templateInfo = await getTemplate(template);
+    //   if (
+    //     templateInfo?.preTrainingData?.enabled &&
+    //     templateInfo.preTrainingData.filePath
+    //   ) {
+    //     try {
+    //       loadAndTrainPreTrainingData(
+    //         chatbot._id,
+    //         templateInfo.preTrainingData.filePath
+    //       ).catch((error) => {
+    //         logger.warn(
+    //           `Failed to load pre-training data for chatbot ${chatbot._id}:`,
+    //           error
+    //         );
+    //       });
+    //     } catch (error) {
+    //       logger.warn(
+    //         `Error setting up pre-training for chatbot ${chatbot._id}:`,
+    //         error
+    //       );
+    //     }
+    //   }
+    // }
 
-    logger.info(`✅ Chatbot created: ${collectionId} for user ${userId}`);
+    logger.info(
+      `✅ Chatbot created (empty, no pre-training data): ${collectionId} for user ${userId}`
+    );
 
     return chatbot;
   } catch (error) {
@@ -805,6 +829,63 @@ export const trainChatbotWithText = async (chatbotId, text) => {
 };
 
 /**
+ * Extract expected dimension from ChromaDB dimension mismatch error
+ * @param {string} errorMessage - Error message from ChromaDB
+ * @returns {number|null} - Expected dimension or null if not found
+ */
+const extractExpectedDimension = (errorMessage) => {
+  const match = errorMessage.match(
+    /expecting embedding with dimension of (\d+)/
+  );
+  return match ? parseInt(match[1], 10) : null;
+};
+
+/**
+ * Get appropriate embedding model for a given dimension
+ * @param {number} dimension - Expected embedding dimension
+ * @returns {string} - Model name that produces the required dimension
+ */
+const getModelForDimension = (dimension) => {
+  return DIMENSION_TO_MODEL_MAP[dimension] || "text-embedding-3-small";
+};
+
+/**
+ * Execute ChromaDB query with timeout handling
+ * @param {Object} collection - ChromaDB collection instance
+ * @param {number[][]} queryEmbedding - Query embedding vector
+ * @param {number} topK - Number of results to return
+ * @returns {Promise<Object>} - Query results
+ */
+const executeVectorQuery = async (collection, queryEmbedding, topK) => {
+  let queryTimeoutId;
+  const queryTimeoutPromise = new Promise((_, reject) => {
+    queryTimeoutId = setTimeout(() => {
+      reject(
+        new Error(
+          `Vector database query timed out after ${
+            VECTOR_QUERY_TIMEOUT_MS / 1000
+          } seconds`
+        )
+      );
+    }, VECTOR_QUERY_TIMEOUT_MS);
+  });
+
+  try {
+    const queryPromise = collection.query({
+      queryEmbeddings: queryEmbedding,
+      nResults: topK,
+    });
+
+    const results = await Promise.race([queryPromise, queryTimeoutPromise]);
+    clearTimeout(queryTimeoutId);
+    return results;
+  } catch (error) {
+    clearTimeout(queryTimeoutId);
+    throw error;
+  }
+};
+
+/**
  * Query chatbot with RAG (Retrieval Augmented Generation)
  */
 export const queryChatbot = async (
@@ -829,44 +910,87 @@ export const queryChatbot = async (
       );
     }
 
-    // Generate query embedding
-    const queryEmbedding = await generateEmbeddings(
-      [query],
+    // Check if chatbot has any training data
+    const hasTrainingData = (chatbot.trainingData?.totalDocuments || 0) > 0;
+    if (!hasTrainingData) {
+      // Return a helpful message when no training data is available
+      return {
+        response:
+          "This chatbot hasn't been trained yet. Please add training data first before querying. You can upload PDF or text files to train your chatbot.",
+        context: [],
+        sources: [],
+        metadata: {
+          chatbotId: chatbot._id.toString(),
+          query: query,
+          hasTrainingData: false,
+          message:
+            "No training data available. Please train your chatbot first.",
+        },
+        model: chatbot.metadata.model || "gpt-3.5-turbo",
+        processingTime: Date.now() - startTime,
+      };
+    }
+
+    // Sanitize embedding model ID before using it
+    const cleanedEmbeddingModel = sanitizeModelId(
       chatbot.metadata.embeddingModel
     );
 
-    // Search similar chunks in ChromaDB with timeout
+    // Get ChromaDB collection
     const chroma = getChromaClient();
     const collection = await chroma.getCollection({
       name: chatbot.collectionId,
     });
 
-    const queryPromise = collection.query({
-      queryEmbeddings: queryEmbedding,
-      nResults: chatbot.config.topK,
-    });
-
-    // Add timeout handling with cleanup
-    let queryTimeoutId;
-    const queryTimeoutPromise = new Promise((_, reject) => {
-      queryTimeoutId = setTimeout(() => {
-        reject(
-          new Error(
-            `Vector database query timed out after ${
-              VECTOR_QUERY_TIMEOUT_MS / 1000
-            } seconds`
-          )
-        );
-      }, VECTOR_QUERY_TIMEOUT_MS);
-    });
-
+    // Generate query embedding and execute query with dimension mismatch handling
+    let queryEmbedding = await generateEmbeddings(
+      [query],
+      cleanedEmbeddingModel
+    );
     let results;
+    let usedModel = cleanedEmbeddingModel;
+
     try {
-      results = await Promise.race([queryPromise, queryTimeoutPromise]);
-      clearTimeout(queryTimeoutId); // Clear timeout if promise resolves
+      results = await executeVectorQuery(
+        collection,
+        queryEmbedding,
+        chatbot.config.topK
+      );
     } catch (error) {
-      clearTimeout(queryTimeoutId); // Clear timeout on error
-      throw error;
+      // Check if it's a dimension mismatch error
+      if (
+        error.message &&
+        error.message.includes("expecting embedding with dimension")
+      ) {
+        const expectedDimension = extractExpectedDimension(error.message);
+
+        if (expectedDimension) {
+          const correctModel = getModelForDimension(expectedDimension);
+
+          logger.warn(
+            `Dimension mismatch detected for chatbot ${chatbotId}. ` +
+              `Collection expects ${expectedDimension} dimensions, but got ${
+                queryEmbedding[0]?.length || "unknown"
+              } with model '${usedModel}'. ` +
+              `Retrying with model '${correctModel}' (${expectedDimension} dims).`
+          );
+
+          // Regenerate embedding with correct model and original query
+          queryEmbedding = await generateEmbeddings([query], correctModel);
+          usedModel = correctModel;
+
+          // Retry query with correct dimension
+          results = await executeVectorQuery(
+            collection,
+            queryEmbedding,
+            chatbot.config.topK
+          );
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
     }
 
     // Extract context from results
@@ -890,11 +1014,60 @@ export const queryChatbot = async (
     // Build prompt with context
     const systemPrompt = chatbot.config.systemPrompt;
 
-    // Create a clean user prompt without "Question:" prefix
-    // This prevents the model from adding "Question: Answer:" format in response
-    const userPrompt = context
-      ? `Based on the following context, answer the user's question directly and naturally. Do not include "Question:" or "Answer:" labels in your response. Just provide a direct answer.\n\nContext:\n${context}\n\nUser's question: ${query}\n\nIf the context doesn't contain enough information to answer the question, politely say that you don't have that information in the available context.`
-      : `Answer the user's question directly and naturally. Do not include "Question:" or "Answer:" labels. Just provide a direct answer.\n\nUser's question: ${query}\n\nIf you don't have enough information, politely say so.`;
+    // Detect simple greetings/casual queries that shouldn't use RAG context
+    const simpleGreetings = [
+      "hello",
+      "hi",
+      "hey",
+      "good morning",
+      "good afternoon",
+      "good evening",
+      "good night",
+      "greetings",
+      "what is your name",
+      "what's your name",
+      "who are you",
+      "who are you?",
+      "what are you",
+      "how are you",
+      "how's it going",
+      "nice to meet you",
+    ];
+    const queryLower = query.toLowerCase().trim();
+    const isSimpleGreeting = simpleGreetings.some(
+      (greeting) =>
+        queryLower === greeting ||
+        queryLower.startsWith(greeting + " ") ||
+        queryLower === greeting + "?"
+    );
+
+    // For simple greetings, skip context and let system prompt handle it naturally
+    let userPrompt;
+    if (isSimpleGreeting) {
+      // For greetings, provide explicit instructions for concise, friendly responses
+      if (
+        queryLower.includes("name") ||
+        queryLower.includes("what's your name") ||
+        queryLower.includes("who are you")
+      ) {
+        userPrompt = `${query}\n\nRespond briefly and directly. Just state your name as "My name is NN bot" or similar, without extra explanations.`;
+      } else if (
+        queryLower.includes("hello") ||
+        queryLower.includes("hi") ||
+        queryLower.includes("hey")
+      ) {
+        userPrompt = `${query}\n\nRespond with a friendly greeting. Say "Hello! I'm NN bot, the virtual assistant for Neel Networks. How can I help you today?" or similar. Keep it brief and welcoming.`;
+      } else {
+        // Other casual questions
+        userPrompt = `${query}\n\nThis is a casual question. Respond naturally and briefly using your system instructions. Do not search or reference the knowledge base unless the question specifically asks about company information.`;
+      }
+    } else if (context) {
+      // Original logic for knowledge-based queries
+      userPrompt = `Based on the following context, answer the user's question directly and naturally. Do not include "Question:" or "Answer:" labels in your response. Just provide a direct answer.\n\nContext:\n${context}\n\nUser's question: ${query}\n\nIf the context doesn't contain enough information to answer the question, politely say that you don't have that information in the available context.`;
+    } else {
+      // No context available
+      userPrompt = `Answer the user's question directly and naturally. Do not include "Question:" or "Answer:" labels. Just provide a direct answer.\n\nUser's question: ${query}\n\nIf you don't have enough information, politely say so.`;
+    }
 
     // Provider selection: 'openai' or 'ollama'
     const CHAT_PROVIDER =
@@ -906,9 +1079,11 @@ export const queryChatbot = async (
     if (CHAT_PROVIDER === "ollama") {
       // Map OpenAI model names to Ollama model names
       // Using smaller models for better compatibility
+      // Sanitize model ID to remove any corruption
+      const cleanedModelId = sanitizeModelId(chatbot.metadata.model);
       let ollamaModel =
-        OLLAMA_CHAT_MODEL_MAP[chatbot.metadata.model] ||
-        chatbot.metadata.model ||
+        OLLAMA_CHAT_MODEL_MAP[cleanedModelId] ||
+        cleanedModelId ||
         DEFAULT_OLLAMA_CHAT_MODEL;
 
       // Try to get completion, with automatic fallback to smaller models on memory error
@@ -974,8 +1149,11 @@ export const queryChatbot = async (
       // Default to OpenAI
       const openai = getOpenAIClient();
 
+      // Sanitize model ID before using it
+      const cleanedModelId = sanitizeModelId(chatbot.metadata.model);
+
       const completionPromise = openai.chat.completions.create({
-        model: chatbot.metadata.model,
+        model: cleanedModelId,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt },
@@ -1075,7 +1253,27 @@ export const getChatbotById = async (chatbotId, userId = null) => {
   if (userId) {
     query.userId = userId;
   }
-  return await Chatbot.findOne(query);
+  const chatbot = await Chatbot.findOne(query);
+
+  // Sanitize model IDs if chatbot exists and save if cleaned
+  if (chatbot && chatbot.metadata) {
+    const originalModel = chatbot.metadata.model;
+    const originalEmbeddingModel = chatbot.metadata.embeddingModel;
+    const cleanedModel = sanitizeModelId(originalModel);
+    const cleanedEmbeddingModel = sanitizeModelId(originalEmbeddingModel);
+
+    if (
+      originalModel !== cleanedModel ||
+      originalEmbeddingModel !== cleanedEmbeddingModel
+    ) {
+      chatbot.metadata.model = cleanedModel;
+      chatbot.metadata.embeddingModel = cleanedEmbeddingModel;
+      await chatbot.save();
+      logger.info(`Cleaned corrupted model IDs for chatbot ${chatbotId}`);
+    }
+  }
+
+  return chatbot;
 };
 
 /**

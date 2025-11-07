@@ -4,6 +4,7 @@ import {
   sanitizeText,
   sanitizeSystemPrompt,
 } from "../utils/sanitize.js";
+import { sanitizeModelMetadata } from "../utils/modelSanitizer.js";
 import {
   createChatbot,
   trainChatbot,
@@ -119,10 +120,23 @@ export const createChatbotHandler = asyncHandler(async (req, res) => {
             code: widgetCode,
           },
           config: chatbot.config,
+          trainingData: {
+            totalDocuments: chatbot.trainingData.totalDocuments || 0,
+            totalChunks: chatbot.trainingData.totalChunks || 0,
+            totalSize: chatbot.trainingData.totalSize || 0,
+            trainingStatus: chatbot.trainingData.trainingStatus || "pending",
+            lastTrainedAt: chatbot.trainingData.lastTrainedAt || null,
+            fileTypes: chatbot.trainingData.fileTypes || [],
+            isEmpty: (chatbot.trainingData.totalDocuments || 0) === 0,
+            message:
+              (chatbot.trainingData.totalDocuments || 0) === 0
+                ? "No training data yet. Please add training data to train your chatbot."
+                : "Training data available",
+          },
           createdAt: chatbot.createdAt,
         },
       },
-      "Chatbot created successfully"
+      "Chatbot created successfully. Please add training data to train your chatbot."
     )
   );
 });
@@ -145,10 +159,17 @@ export const getChatbots = asyncHandler(async (req, res) => {
           description: chatbot.description,
           status: chatbot.status,
           trainingData: {
-            totalDocuments: chatbot.trainingData.totalDocuments,
-            totalChunks: chatbot.trainingData.totalChunks,
-            lastTrainedAt: chatbot.trainingData.lastTrainedAt,
-            trainingStatus: chatbot.trainingData.trainingStatus,
+            totalDocuments: chatbot.trainingData.totalDocuments || 0,
+            totalChunks: chatbot.trainingData.totalChunks || 0,
+            totalSize: chatbot.trainingData.totalSize || 0,
+            lastTrainedAt: chatbot.trainingData.lastTrainedAt || null,
+            trainingStatus: chatbot.trainingData.trainingStatus || "pending",
+            fileTypes: chatbot.trainingData.fileTypes || [],
+            isEmpty: (chatbot.trainingData.totalDocuments || 0) === 0,
+            message:
+              (chatbot.trainingData.totalDocuments || 0) === 0
+                ? "No training data yet. Please add training data to train your chatbot."
+                : "Training data available",
           },
           statistics: chatbot.statistics,
           createdAt: chatbot.createdAt,
@@ -190,7 +211,19 @@ export const getChatbot = asyncHandler(async (req, res) => {
           description: chatbot.description,
           status: chatbot.status,
           collectionId: chatbot.collectionId,
-          trainingData: chatbot.trainingData,
+          trainingData: {
+            totalDocuments: chatbot.trainingData.totalDocuments || 0,
+            totalChunks: chatbot.trainingData.totalChunks || 0,
+            totalSize: chatbot.trainingData.totalSize || 0,
+            lastTrainedAt: chatbot.trainingData.lastTrainedAt || null,
+            trainingStatus: chatbot.trainingData.trainingStatus || "pending",
+            fileTypes: chatbot.trainingData.fileTypes || [],
+            isEmpty: (chatbot.trainingData.totalDocuments || 0) === 0,
+            message:
+              (chatbot.trainingData.totalDocuments || 0) === 0
+                ? "No training data yet. Please add training data to train your chatbot."
+                : "Training data available",
+          },
           config: chatbot.config,
           widget: {
             apiKey: chatbot.widget.apiKey,
@@ -199,7 +232,7 @@ export const getChatbot = asyncHandler(async (req, res) => {
             code: widgetCode,
           },
           statistics: chatbot.statistics,
-          metadata: chatbot.metadata,
+          metadata: sanitizeModelMetadata(chatbot.metadata),
           createdAt: chatbot.createdAt,
           updatedAt: chatbot.updatedAt,
         },
@@ -215,6 +248,15 @@ export const getChatbot = asyncHandler(async (req, res) => {
 export const trainChatbotFile = asyncHandler(async (req, res) => {
   const { id } = req.params;
   const userId = req.user._id;
+
+  // Long-running operation: extend/clear default request timeout (connect-timeout)
+  if (typeof req.clearTimeout === "function") {
+    req.clearTimeout();
+  }
+  if (typeof req.setTimeout === "function") {
+    // Allow up to 5 minutes for large file processing
+    req.setTimeout(5 * 60 * 1000);
+  }
 
   if (!req.file) {
     throw new ApiError(400, "No file uploaded");
@@ -350,6 +392,15 @@ export const trainChatbotText = asyncHandler(async (req, res) => {
   const { text } = req.body;
   const userId = req.user._id;
   const startTime = Date.now();
+
+  // Long-running operation: extend/clear default request timeout (connect-timeout)
+  if (typeof req.clearTimeout === "function") {
+    req.clearTimeout();
+  }
+  if (typeof req.setTimeout === "function") {
+    // Allow up to 5 minutes for large text payloads
+    req.setTimeout(5 * 60 * 1000);
+  }
 
   // Sanitize text input (but keep content for training)
   // Note: We don't fully sanitize training text as it may contain legitimate content
@@ -871,6 +922,46 @@ export const widgetQuery = asyncHandler(async (req, res) => {
 
     throw error;
   }
+});
+
+/**
+ * Get widget info (public endpoint for widget to fetch chatbot name and description)
+ */
+export const getWidgetInfo = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { apiKey } = req.query;
+
+  if (!apiKey) {
+    throw new ApiError(400, "API key is required");
+  }
+
+  // Find chatbot by ID
+  const chatbot = await Chatbot.findById(id);
+
+  if (!chatbot) {
+    throw new ApiError(404, "Chatbot not found");
+  }
+
+  // Verify API key
+  if (chatbot.widget.apiKey !== apiKey) {
+    throw new ApiError(401, "Invalid API key");
+  }
+
+  // Check if widget is enabled
+  if (!chatbot.widget.enabled) {
+    throw new ApiError(403, "Widget is disabled for this chatbot");
+  }
+
+  return res.status(200).json(
+    new ApiResponse(
+      200,
+      {
+        name: chatbot.name,
+        description: chatbot.description || "",
+      },
+      "Widget info retrieved successfully"
+    )
+  );
 });
 
 /**

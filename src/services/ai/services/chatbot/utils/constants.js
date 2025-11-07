@@ -36,3 +36,21 @@ export const OLLAMA_CHAT_MODEL_MAP = {
 
 export const DEFAULT_OLLAMA_EMBEDDING_MODEL = "nomic-embed-text";
 export const DEFAULT_OLLAMA_CHAT_MODEL = "tinyllama";
+
+// Embedding model dimensions mapping
+// Maps OpenAI model names to their expected dimensions in sentence-transformers
+export const EMBEDDING_MODEL_DIMENSIONS = {
+  // OpenAI models -> sentence-transformers models with dimensions
+  "text-embedding-3-small": 384, // maps to all-MiniLM-L6-v2
+  "text-embedding-3-large": 768, // maps to all-mpnet-base-v2
+  "text-embedding-ada-002": 384, // maps to all-MiniLM-L6-v2
+  "text-embedding": 384, // fallback, maps to all-MiniLM-L6-v2
+};
+
+// Model fallback mapping for dimension mismatches
+// If collection expects 768 dims, use text-embedding-3-large
+// If collection expects 384 dims, use text-embedding-3-small
+export const DIMENSION_TO_MODEL_MAP = {
+  384: "text-embedding-3-small",
+  768: "text-embedding-3-large",
+};

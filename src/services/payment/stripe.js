@@ -18,16 +18,79 @@ const getStripeClient = () => {
 export const createCustomer = async (userData) => {
   try {
     const stripeClient = getStripeClient();
-    const customer = await stripeClient.customers.create({
+
+    // Ensure userId is converted to string (MongoDB ObjectId needs conversion)
+    const userIdString = userData.id?.toString() || String(userData.id || "");
+
+    const customerData = {
       email: userData.email,
       name: userData.name,
       metadata: {
-        userId: userData.id,
+        userId: userIdString,
       },
-    });
+    };
+
+    // Add billing address for Indian regulations (required for export transactions)
+    // If address is provided, use it; otherwise use default address
+    if (userData.address) {
+      customerData.address = {
+        line1: userData.address.line1 || "Not provided",
+        line2: userData.address.line2 || null,
+        city: userData.address.city || "Not provided",
+        state: userData.address.state || null,
+        postal_code:
+          userData.address.postalCode ||
+          userData.address.postal_code ||
+          "000000",
+        country: userData.address.country || "US", // Default to US if not provided
+      };
+    } else {
+      // Default address for Indian regulations (can be updated later)
+      customerData.address = {
+        line1: "Not provided",
+        city: "Not provided",
+        postal_code: "000000",
+        country: "US", // Default country code (ISO-3166)
+      };
+    }
+
+    const customer = await stripeClient.customers.create(customerData);
     return customer;
   } catch (error) {
     throw new Error(`Stripe Customer Creation Error: ${error.message}`);
+  }
+};
+
+export const createPaymentIntent = async (
+  customerId,
+  amount,
+  currency = "usd",
+  metadata = {},
+  description = null
+) => {
+  try {
+    const stripeClient = getStripeClient();
+    const paymentIntentData = {
+      amount: Math.round(amount * 100), // Convert to cents
+      currency: currency.toLowerCase(),
+      customer: customerId,
+      metadata: metadata,
+      automatic_payment_methods: {
+        enabled: true,
+      },
+    };
+
+    // Add description if provided (required for Indian Stripe accounts)
+    if (description) {
+      paymentIntentData.description = description;
+    }
+
+    const paymentIntent = await stripeClient.paymentIntents.create(
+      paymentIntentData
+    );
+    return paymentIntent;
+  } catch (error) {
+    throw new Error(`Stripe PaymentIntent Error: ${error.message}`);
   }
 };
 

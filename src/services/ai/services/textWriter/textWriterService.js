@@ -3,6 +3,21 @@ import {
   getOpenRouterClient,
   DEFAULT_OPENROUTER_MODEL,
 } from "../../providers/openrouter.js";
+import {
+  getOllamaChatCompletion,
+  checkOllamaAvailability,
+  getAvailableOllamaModels,
+  findSmallestAvailableModel,
+} from "../chatbot/utils/ollamaClient.js";
+import logger from "../../../../utils/logger.js";
+import axios from "axios";
+
+// Provider selection: 'openai', 'openrouter', or 'ollama'
+const TEXT_WRITER_PROVIDER = process.env.TEXT_WRITER_PROVIDER || "openrouter"; // Default to openrouter
+
+// Ollama configuration
+const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL || "http://localhost:11434";
+const OLLAMA_MODEL = process.env.OLLAMA_TEXT_WRITER_MODEL || "mistral:7b"; // Use mistral-7b for text writer
 
 // Use OpenRouter for development (better pricing & availability)
 const USE_OPENROUTER = process.env.USE_OPENROUTER !== "false"; // Default true
@@ -24,13 +39,18 @@ const getOpenAIClient = () => {
   return openai;
 };
 
-// Get API client (OpenRouter or OpenAI)
+// Get API client (OpenRouter, OpenAI, or Ollama)
 const getAIClient = () => {
-  if (USE_OPENROUTER) {
+  if (TEXT_WRITER_PROVIDER === "ollama") {
+    // Ollama doesn't need a client object, return null and handle separately
+    return null;
+  }
+
+  if (TEXT_WRITER_PROVIDER === "openrouter" || USE_OPENROUTER) {
     try {
       return getOpenRouterClient();
     } catch (e) {
-      console.log("⚠️ OpenRouter not available, falling back to OpenAI");
+      logger.warn("⚠️ OpenRouter not available, falling back to OpenAI");
       return getOpenAIClient();
     }
   }
@@ -39,11 +59,146 @@ const getAIClient = () => {
 
 // Get model name based on provider
 const getModel = () => {
-  if (USE_OPENROUTER) {
+  if (TEXT_WRITER_PROVIDER === "ollama") {
+    return OLLAMA_MODEL;
+  }
+  if (TEXT_WRITER_PROVIDER === "openrouter" || USE_OPENROUTER) {
     return process.env.OPENROUTER_MODEL || DEFAULT_OPENROUTER_MODEL;
   }
   return "gpt-3.5-turbo";
 };
+
+// Validate environment based on provider
+function validateEnvironment() {
+  if (TEXT_WRITER_PROVIDER === "ollama") {
+    // Ollama doesn't require API keys, just needs to be running
+    return;
+  }
+
+  if (TEXT_WRITER_PROVIDER === "openai") {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error(
+        "OPENAI_API_KEY environment variable is required when using OpenAI provider"
+      );
+    }
+    return;
+  }
+
+  if (TEXT_WRITER_PROVIDER === "openrouter") {
+    if (!process.env.OPENROUTER_API_KEY) {
+      throw new Error(
+        "OPENROUTER_API_KEY environment variable is required when using OpenRouter provider"
+      );
+    }
+    return;
+  }
+
+  // Default: try OpenRouter or OpenAI
+  if (!process.env.OPENROUTER_API_KEY && !process.env.OPENAI_API_KEY) {
+    throw new Error(
+      "Either OPENROUTER_API_KEY or OPENAI_API_KEY environment variable is required"
+    );
+  }
+}
+
+// Get Ollama streaming response with error handling
+async function* getOllamaStream(messages, model, temperature, maxTokens) {
+  try {
+    const response = await axios.post(
+      `${OLLAMA_BASE_URL}/api/chat`,
+      {
+        model: model,
+        messages: messages,
+        stream: true,
+        options: {
+          temperature: temperature,
+          num_predict: maxTokens,
+        },
+      },
+      {
+        timeout: 120000, // 2 minutes timeout for generation
+        responseType: "stream",
+        validateStatus: () => true, // Don't throw on any status, we'll handle it manually
+      }
+    );
+
+    // Check for error status
+    if (response.status >= 400) {
+      // Read error response
+      let errorData = "";
+      for await (const chunk of response.data) {
+        errorData += chunk.toString();
+      }
+
+      try {
+        const errorJson = JSON.parse(errorData);
+        const errorMessage = errorJson.error || errorData;
+
+        // Handle memory errors
+        if (
+          errorMessage.includes("system memory") ||
+          errorMessage.includes("unable to load") ||
+          errorMessage.includes("requires more") ||
+          errorMessage.includes("insufficient memory")
+        ) {
+          throw new Error(
+            `MEMORY_ERROR: Model "${model}" requires more memory. ` +
+              `Try using a smaller model or increase available RAM/VRAM.`
+          );
+        }
+
+        throw new Error(`Ollama API error: ${errorMessage}`);
+      } catch (parseError) {
+        throw new Error(
+          `Ollama API error (${response.status}): ${
+            errorData || response.statusText
+          }`
+        );
+      }
+    }
+
+    // Process streaming response
+    for await (const chunk of response.data) {
+      const lines = chunk
+        .toString()
+        .split("\n")
+        .filter((line) => line.trim());
+      for (const line of lines) {
+        try {
+          const data = JSON.parse(line);
+          if (data.error) {
+            throw new Error(`Ollama streaming error: ${data.error}`);
+          }
+          if (data.message && data.message.content) {
+            yield data.message.content;
+          }
+          if (data.done) {
+            break;
+          }
+        } catch (e) {
+          // If it's an error object, throw it
+          if (e.message && e.message.includes("Ollama streaming error")) {
+            throw e;
+          }
+          // Skip invalid JSON lines
+          continue;
+        }
+      }
+    }
+  } catch (error) {
+    logger.error("Ollama streaming error:", error);
+    if (error.code === "ECONNREFUSED") {
+      throw new Error(
+        `Cannot connect to Ollama. Make sure Ollama is running on ${OLLAMA_BASE_URL}. Run: ollama serve`
+      );
+    }
+    // Re-throw if it's already a formatted error
+    if (error.message && error.message.includes("MEMORY_ERROR")) {
+      throw error;
+    }
+    throw error;
+  }
+}
 
 // AI Text Writer Service
 export class AITextWriterService {
@@ -74,13 +229,124 @@ export class AITextWriterService {
     );
 
     try {
-      // Try OpenAI first, fallback to mock if not available
+      // Check provider and get appropriate client
+      if (TEXT_WRITER_PROVIDER === "ollama") {
+        // Check if Ollama is available
+        const isOllamaAvailable = await checkOllamaAvailability();
+        if (!isOllamaAvailable) {
+          logger.warn("🔄 Ollama not available, using mock streaming");
+          throw new Error("Ollama not available");
+        }
+
+        logger.info(`🚀 Using Ollama with model: ${OLLAMA_MODEL}`);
+
+        const messages = [
+          {
+            role: "system",
+            content:
+              "You are a professional content writer. Write high-quality, engaging content that meets the user's requirements.",
+          },
+          {
+            role: "user",
+            content: systemPrompt,
+          },
+        ];
+
+        let fullText = "";
+        let currentModel = OLLAMA_MODEL;
+        let retryCount = 0;
+        const maxRetries = 2;
+
+        while (retryCount <= maxRetries) {
+          try {
+            const stream = getOllamaStream(
+              messages,
+              currentModel,
+              this.temperature,
+              this.maxTokens
+            );
+
+            for await (const chunk of stream) {
+              if (chunk) {
+                fullText += chunk;
+                yield chunk;
+              }
+            }
+            // Success - break out of retry loop
+            break;
+          } catch (streamError) {
+            // Handle memory errors with fallback to smaller model
+            if (
+              streamError.message &&
+              streamError.message.includes("MEMORY_ERROR") &&
+              retryCount < maxRetries
+            ) {
+              logger.warn(
+                `⚠️ Memory error with model "${currentModel}", trying smaller model...`
+              );
+
+              // Try to find a smaller available model
+              const smallerModels = [
+                "tinyllama", // ~637MB - Smallest
+                "gemma:2b", // ~2GB
+                "gemma3:4b", // ~3.3GB
+                "llama2:7b", // ~4GB
+                "mistral", // ~4GB (without :7b)
+              ];
+
+              const alternativeModel = await findSmallestAvailableModel(
+                smallerModels.filter((m) => m !== currentModel)
+              );
+
+              if (alternativeModel && alternativeModel !== currentModel) {
+                logger.info(
+                  `🔄 Switching to smaller model: ${alternativeModel}`
+                );
+                currentModel = alternativeModel;
+                retryCount++;
+                continue; // Retry with smaller model
+              } else {
+                // No alternative found, throw helpful error
+                const availableModels = await getAvailableOllamaModels();
+                throw new Error(
+                  `Insufficient memory to load model "${OLLAMA_MODEL}". ` +
+                    `Available models: ${
+                      availableModels.join(", ") || "none"
+                    }. ` +
+                    `Try pulling a smaller model: ollama pull tinyllama (smallest, ~637MB)`
+                );
+              }
+            }
+            // Re-throw other errors
+            throw streamError;
+          }
+        }
+
+        // Calculate word count
+        const trimmedText = fullText.trim();
+        const wordsGenerated = trimmedText
+          .split(/\s+/)
+          .filter((w) => w.length > 0).length;
+
+        return {
+          success: true,
+          content: trimmedText,
+          wordsGenerated: wordsGenerated,
+          model: OLLAMA_MODEL,
+        };
+      }
+
+      // Try OpenAI/OpenRouter
       let openaiClient;
       try {
         openaiClient = getAIClient();
-        console.log(`🚀 Using ${USE_OPENROUTER ? "OpenRouter" : "OpenAI"}`);
+        logger.info(
+          `🚀 Using ${
+            TEXT_WRITER_PROVIDER === "openrouter" ? "OpenRouter" : "OpenAI"
+          }`
+        );
       } catch (e) {
-        console.log("🔄 AI service not available, using mock streaming");
+        logger.warn("🔄 AI service not available, using mock streaming");
         // Yield mock content with streaming effect
         const mockContent = this.generateMockText(prompt, contentType, options);
         const words = mockContent.content.split(" ");
@@ -151,7 +417,7 @@ export class AITextWriterService {
         model: getModel(),
       };
     } catch (error) {
-      console.error("OpenAI Streaming Error:", error);
+      logger.error("Text Writer Streaming Error:", error);
 
       // If quota exceeded or rate limit, fall back to mock
       if (
@@ -159,7 +425,7 @@ export class AITextWriterService {
         error.status === 429 ||
         error.code === "rate_limit_exceeded"
       ) {
-        console.log(
+        logger.warn(
           "🔄 OpenAI quota/rate limit exceeded, falling back to mock streaming"
         );
 
@@ -226,10 +492,120 @@ export class AITextWriterService {
 
     try {
       const startTime = Date.now();
-      const openaiClient = getOpenAIClient();
+
+      // Use Ollama if provider is set to ollama
+      if (TEXT_WRITER_PROVIDER === "ollama") {
+        const isOllamaAvailable = await checkOllamaAvailability();
+        if (!isOllamaAvailable) {
+          throw new Error(
+            `Cannot connect to Ollama. Make sure Ollama is running on ${OLLAMA_BASE_URL}. Run: ollama serve`
+          );
+        }
+
+        logger.info(`🚀 Using Ollama with model: ${OLLAMA_MODEL}`);
+
+        const messages = [
+          {
+            role: "system",
+            content:
+              "You are a professional content writer. Write high-quality, engaging content that meets the user's requirements.",
+          },
+          {
+            role: "user",
+            content: systemPrompt,
+          },
+        ];
+
+        let currentModel = OLLAMA_MODEL;
+        let retryCount = 0;
+        const maxRetries = 2;
+        let result;
+
+        while (retryCount <= maxRetries) {
+          try {
+            result = await getOllamaChatCompletion(
+              messages,
+              currentModel,
+              this.temperature,
+              this.maxTokens
+            );
+            // Success - break out of retry loop
+            break;
+          } catch (error) {
+            // Handle memory errors with fallback to smaller model
+            if (
+              error.message &&
+              (error.message.includes("system memory") ||
+                error.message.includes("unable to load") ||
+                error.message.includes("requires more") ||
+                error.message.includes("insufficient memory")) &&
+              retryCount < maxRetries
+            ) {
+              logger.warn(
+                `⚠️ Memory error with model "${currentModel}", trying smaller model...`
+              );
+
+              // Try to find a smaller available model
+              const smallerModels = [
+                "tinyllama", // ~637MB - Smallest
+                "gemma:2b", // ~2GB
+                "gemma3:4b", // ~3.3GB
+                "llama2:7b", // ~4GB
+                "mistral", // ~4GB (without :7b)
+              ];
+
+              const alternativeModel = await findSmallestAvailableModel(
+                smallerModels.filter((m) => m !== currentModel)
+              );
+
+              if (alternativeModel && alternativeModel !== currentModel) {
+                logger.info(
+                  `🔄 Switching to smaller model: ${alternativeModel}`
+                );
+                currentModel = alternativeModel;
+                retryCount++;
+                continue; // Retry with smaller model
+              } else {
+                // No alternative found, throw helpful error
+                const availableModels = await getAvailableOllamaModels();
+                throw new Error(
+                  `Insufficient memory to load model "${OLLAMA_MODEL}". ` +
+                    `Available models: ${
+                      availableModels.join(", ") || "none"
+                    }. ` +
+                    `Try pulling a smaller model: ollama pull tinyllama (smallest, ~637MB)`
+                );
+              }
+            }
+            // Re-throw other errors
+            throw error;
+          }
+        }
+
+        const duration = Date.now() - startTime;
+        const generatedText = result.content;
+        const wordsGenerated = generatedText
+          .split(/\s+/)
+          .filter((w) => w.length > 0).length;
+
+        return {
+          success: true,
+          content: generatedText,
+          wordsGenerated: wordsGenerated,
+          tokensUsed: result.tokens || 0,
+          model: currentModel, // Return the model that actually worked
+          duration: duration,
+        };
+      }
+
+      // Use OpenAI/OpenRouter
+      const openaiClient = getAIClient();
+      if (!openaiClient) {
+        throw new Error("AI client not available");
+      }
 
       const completion = await openaiClient.chat.completions.create({
-        model: this.model,
+        model: getModel(),
         messages: [
           {
             role: "system",
@@ -243,27 +619,29 @@ export class AITextWriterService {
         ],
         max_tokens: this.maxTokens,
         temperature: this.temperature,
-        stream: false, // Set to true for streaming
+        stream: false,
       });
 
       const duration = Date.now() - startTime;
       const generatedText = completion.choices[0].message.content;
-      const wordsGenerated = generatedText.split(" ").length;
+      const wordsGenerated = generatedText
+        .split(/\s+/)
+        .filter((w) => w.length > 0).length;
 
       return {
         success: true,
         content: generatedText,
         wordsGenerated: wordsGenerated,
         tokensUsed: completion.usage?.total_tokens || 0,
-        model: this.model,
+        model: getModel(),
         duration: duration,
       };
     } catch (error) {
-      console.error("OpenAI API Error:", error);
+      logger.error("Text Writer API Error:", error);
 
       // If quota exceeded, fall back to mock service
       if (error.code === "insufficient_quota" || error.status === 429) {
-        console.log("🔄 OpenAI quota exceeded, falling back to mock service");
+        logger.warn("🔄 OpenAI quota exceeded, falling back to mock service");
         return this.generateMockText(prompt, contentType, options);
       }
 

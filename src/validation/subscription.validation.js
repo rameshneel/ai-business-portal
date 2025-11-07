@@ -5,8 +5,10 @@ export const validateSubscriptionUpgrade = [
   body("planId")
     .notEmpty()
     .withMessage("Plan ID is required")
-    .isMongoId()
-    .withMessage("Invalid plan ID format"),
+    // Allow both MongoDB ObjectId and plan type strings (e.g., "basic", "pro")
+    // Controller will handle the lookup logic
+    .isString()
+    .withMessage("Plan ID must be a string"),
 
   body("billingCycle")
     .optional()
