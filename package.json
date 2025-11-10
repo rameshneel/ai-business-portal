@@ -4,10 +4,12 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
+    "start": "node src/index.js",
     "dev": "nodemon src/index.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "docker:build": "docker build -t ai-portal-backend .",
+    "docker:run": "docker run -p 5000:5000 --env-file .env ai-portal-backend"
   },
   "keywords": [
     "ai",

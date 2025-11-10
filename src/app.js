@@ -34,8 +34,11 @@ app.use(
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: [
           "'self'",
-          "http://localhost:5000", // Allow Socket.IO connection
+          process.env.BASE_URL ||
+            process.env.API_URL ||
+            "http://localhost:5000",
           "https://cdn.socket.io",
+          "wss://cdn.socket.io",
         ],
       },
     },
@@ -49,17 +52,23 @@ app.use(compression());
 app.use(cookieParser());
 
 // CORS configuration
-app.use(
-  cors({
-    origin: [
+const corsOrigins = process.env.CORS_ORIGINS
+  ? process.env.CORS_ORIGINS.split(",").map((origin) => origin.trim())
+  : process.env.NODE_ENV === "production"
+  ? [process.env.FRONTEND_URL || "https://yourdomain.com"]
+  : [
       process.env.FRONTEND_URL || "http://localhost:3000",
       "http://localhost:5000",
       "http://127.0.0.1:5000",
       "file://", // For local HTML files
       "null", // For local HTML files
-    ],
+    ];
+
+app.use(
+  cors({
+    origin: corsOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     optionsSuccessStatus: 200,
   })
